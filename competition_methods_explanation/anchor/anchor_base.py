@@ -381,6 +381,6 @@ class AnchorBaseBeam(object):
                 sample_fns, initial_stats, epsilon, delta, batch_size,
                 1, verbose=verbose)
             best_tuple = tuples[chosen_tuples[0]]
-            print("Fail to reach threshold. chose best")
+            print("Fail to find a rule that reaches threshold. chose best")
         # return best_tuple, state
         return AnchorBaseBeam.get_anchor_from_tuple(best_tuple, state)

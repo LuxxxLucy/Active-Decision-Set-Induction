@@ -15,6 +15,7 @@ I really don't like Pandas....
 
 def prepare_2d_sinusoidal_dataset():
     np.random.seed(42)
+    random.seed(42)
     def myfunc(x,y):
         return 1 if np.sin(10 * x) + np.cos(4 * y)  - np.cos(3*x*y) >= 0 else 0
 

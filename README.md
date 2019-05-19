@@ -1,7 +1,7 @@
 # Descriptive Induction from Machine Learning Model
 
 This is a repo for current research project on descriptive induction from machine learning model.
-This is a model-agnostic approach that could be used to infer human-readable patterns from any blackbox model.
+This is a model-agnostic approach that could be used to infer human-readable patterns from any blackbox model (classifier).
 
 Currently the core code is not included but several competition methods are re-implemented or adopted.
 
@@ -35,6 +35,33 @@ I assume you use anaconda.
 
 
 # Structure of Code
+
+# Hyper-Parameters
+
+There hyper-parameters for this algorithm:
+1. in `mcts.py`: there is a `BASE_BATCH_SIZE`: this indicates how many synthetic instances are generated and queried for one time.
+2. in `core.py`:
+    1. `THRESHOLD`:  the threshold of precision, 0.01 means that a precision rule is of 99 percent accuracy
+    2. `K_INTERVALS`: number of the possible split point for continuous features.
+    3. `SMALL_THRESHOLD`: it specifies how small a interval will not be considered not to be splited for continuous variable.
+    4. `SMALL_SPACE`: it specifies how small the volume of a space defined by a pattern will not be considered.
+    5. `HUGE_NUMBER`: used as a indication for postive infinity
+    5. TODO(now this test is disabled in the code) `MIN_SUPPORT`: a pattern with less than this number of real instances as support will not be considered 
+
+
+
+# Utilities for inspection
+
+1. How to inspect the pattern of a node?
+
+    tmp = node.pattern.string_representation(domain=self.domain)
+    print(tmp)
+2. How to inspect some variables of a node? Use
+
+    print(node.q_value)
+    print(node.count)
+    ...
+
 
 # Deprecated:
 
