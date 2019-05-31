@@ -29,6 +29,10 @@ MIN_SUPPORT =1
 
 
 class Selector():
+    '''
+    Selector represents a single condition.
+    It is modified based on the selector class from Orange package. (in particualr, Orange.classification.rule)
+    '''
     OPERATORS = {
         # discrete, nominal variables
         # '==': operator.eq,
@@ -407,6 +411,11 @@ class Node:
         space_coverage = compute_coverage(self.pattern.selectors,self.base_selectors)
         return space_coverage
 
+    def split(self):
+
+        return self.split_gini_index()
+        # return self.split_info_gain()
+
     def split_info_gain(self):
         '''
         split useing information gain criteria to find a single feature and threshold to split.
@@ -518,14 +527,16 @@ class Node:
         self.synthetic_instances=[]
         return True
 
-    def split_WRAcc(self):
+    def split_gini_index(self):
+
         '''
         split using weighted relative accuracy criteria to find a single feature and threshold to split.
         Note that we use value set split for categorical features.
         '''
-        def WRAcc(s,p_1,p_2,instances):
+        def gini_index(s,p_1,p_2,instances):
             '''
-            calculate the information gain
+            calculate the decrease of gini index.
+            a maximum decreas of gini index indicates a good split.
             '''
             all_instances = np.ones(instances.X.shape[0],dtype=bool)
             # s_positive = np.sum( s.filter_data(instances.X)   )
@@ -546,14 +557,10 @@ class Node:
             s_2_negative = np.sum(instances_s_2.Y == 0)
             s_2_all = len(instances_s_2)
 
-            # info_gain = info_entropy(s_positive,s_negative) - s_1_all / (s_all+1) * info_entropy(s_1_positive,s_2_negative) - s_2_all / (s_all+1) * info_entropy(s_2_positive,s_2_negative)
-            wracc_s_p1 = compute_coverage(p_1.selectors,s) * ( s_1_positive / (s_1_all+1)  - s_positive / (s_all+1)  )
-
-            wracc_s_p2 = compute_coverage(p_2.selectors,s) * ( s_2_positive / (s_2_all+1) -   s_positive / (s_all+1)   )
-
-            WRAcc_gain = max(wracc_s_p1,wracc_s_p2)
-
-            return WRAcc_gain
+            gini_1 = 1 - (s_1_positive/ (1+s_1_all)  )**2 - (s_1_negative/ (1+s_1_all) )**2
+            gini_2 = 1 - (s_2_positive/ (1+s_2_all) )**2 - (s_2_negative/ (1+s_2_all) )**2
+            gini = 1 - (s_positive/ (1+s_all) )**2 - (s_negative/ (1+s_all) )**2
+            return gini - gini_1 -gini_2
 
         def best_split_single_feature(i,pattern,real_instances,synthetic_instances):
             '''
@@ -584,7 +591,7 @@ class Node:
             tuples = []
             for option,(p_1,p_2) in options:
                 # construct new selector for a given threshold option
-                value = WRAcc(selectors,p_1,p_2,instances)
+                value = gini_index(selectors,p_1,p_2,instances)
                 tuples.append( ( option,p_1,p_2,value  ))
 
             _,p_1,p_2,value = max(tuples, key=lambda x: x[3])

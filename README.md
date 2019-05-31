@@ -16,8 +16,23 @@ I assume you use anaconda.
 
 # Some notes for the competition methods.
 ---
-1. `sp_anchor.py`:the Anchor implementation from the original author is slightly modified, about the data preprocessing. (None of the core code is modified). A SP-Anchor function is added.
-2. `cn2anchor.py`: warper of separate-and-conquer manner CN2-Anchor algorithm. The original anchor implementation is adopted, which employs a top-down (general-to-specific search with KL-LUCB algorithm).  
+Passive approaches:
+
+1. __Interpretable decision set__ (TODO)
+2. __BETA__ (TODO)
+3. __Bayesian decision set__ (TODO)
+4. __Scalable Bayesian Decision List__ (TODO)
+5. __RuleMatrix__ (sampling+SBDL)
+6. __CN2__ and __CN2SD__ (okay)
+
+Active approaches (bottom-up)
+1. __Submodular Pick Anchor__ algorithm in `sp_anchor.py`: pick a good local explanation sequentially. the Anchor implementation from the original author is slightly modified, about the data preprocessing. (None of the core code is modified). A SP-Anchor function is added.
+2. __CN2-Anchor__ in `cn2anchor.py`: warper of separate-and-conquer manner CN2-Anchor algorithm. The original anchor implementation is adopted, which employs a top-down (general-to-specific search with KL-LUCB algorithm).  
+
+Active approaches (top-down):
+1. __TREPAN__:
+2. __DTExtract__:
+3. __UCT-DTExtract__ in `uct.py`:
 
 
 # Data Structure
@@ -46,7 +61,7 @@ There hyper-parameters for this algorithm:
     3. `SMALL_THRESHOLD`: it specifies how small a interval will not be considered not to be splited for continuous variable.
     4. `SMALL_SPACE`: it specifies how small the volume of a space defined by a pattern will not be considered.
     5. `HUGE_NUMBER`: used as a indication for postive infinity
-    5. TODO(now this test is disabled in the code) `MIN_SUPPORT`: a pattern with less than this number of real instances as support will not be considered 
+    5. TODO(now this test is disabled in the code) `MIN_SUPPORT`: a pattern with less than this number of real instances as support will not be considered
 
 
 

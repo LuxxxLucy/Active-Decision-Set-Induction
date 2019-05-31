@@ -1,6 +1,6 @@
 import numpy as np
 
-from core import Selector, Pattern, Node
+from .core import Selector, Pattern, Node
 from Orange.data import Table, Domain
 
 # base batch size, number of new query to the blackbox at each roll_out_estimate phase
@@ -72,7 +72,7 @@ class Tree:
     def expand(self,node):
         # find the split condition and form children nodes
         # split_okay = node.split_info_gain()
-        split_okay = node.split_WRAcc()
+        split_okay = node.split()
         if split_okay == False:
             # this node cannot be further split...
             return

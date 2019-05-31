@@ -1,5 +1,5 @@
 '''
-    the algorithm of our approach
+    the algorithm is a modification of the Trepan algorithm as a Monte-Carlo tree-search problem
     the principle of design is that, code in this file should be pseudo-code like.
     where each essential function are implemented in `core.py`
     ---
@@ -15,8 +15,8 @@
 '''
 
 import numpy as np
-from mcts import Tree
-from core import diverse_filter_sorted
+from .mcts_core.tree import Tree
+from .mcts_core.core import diverse_filter_sorted
 # from utils import check
 
 def explain_tabular_no_query(dataset,encoder, blackbox, target_class = 'yes', random_seed=42, K=-1,termination_max=20):
