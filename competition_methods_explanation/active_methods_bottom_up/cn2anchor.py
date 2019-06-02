@@ -56,7 +56,7 @@ def cn2anchor_tabular(dataset,encoder, blackbox, target_class = 'yes', random_se
     np.random.seed(random_seed)
 
     # re-labelled the data
-    labels = blackbox(encoder.transform(dataset.X))
+    labels = blackbox(encoder(dataset.X))
     data_table = Orange.data.Table(dataset.domain, dataset.X, labels)
 
 
@@ -184,7 +184,7 @@ def cn2anchorsd_tabular(dataset,encoder, blackbox, target_class = 'yes', random_
     # np.random.seed(random_seed)
     #
     # # re-labelled the data
-    # labels = blackbox(encoder.transform(dataset.X))
+    # labels = blackbox(encoder(dataset.X))
     # data_table = Orange.data.Table(dataset.domain, dataset.X, labels)
     #
     #

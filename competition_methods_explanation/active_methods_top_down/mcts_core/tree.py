@@ -101,7 +101,7 @@ class Tree:
         else:
             # sample a fixed size of `batch_size` sample from current pattern
             new_X = node.sample(batch_size) # uniformly sample inside a region of space (specified by the pattern)
-            new_y = self.blackbox(self.encoder.transform(new_X)) # query the blackbox to get the label
+            new_y = self.blackbox(self.encoder(new_X)) # query the blackbox to get the label
             new_synthetic_instances = Table.from_numpy(X=new_X,Y=new_y,domain=self.domain) # create new table of synthetic_instances
             # print('before update, q_value:{0},tp:{1},p:{2},count{3},precision{4}'.format(node.q_value,node.true_positive,node.positive,node.count,node.precision  ) )
             node.update_current(new_synthetic_instances) # recompute: q, true_positive, positive etc and also append new instances to synthetic_instances set

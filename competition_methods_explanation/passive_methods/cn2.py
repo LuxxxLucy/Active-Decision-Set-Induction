@@ -22,7 +22,7 @@ def cn2_tabular(dataset,encoder, blackbox, target_class = 'yes', random_seed=42)
     np.random.seed(random_seed)
 
     # re-labelled the data
-    labels = blackbox(encoder.transform(dataset.X))
+    labels = blackbox(encoder(dataset.X))
     data_table = Orange.data.Table(dataset.domain, dataset.X, labels)
 
 
@@ -61,7 +61,7 @@ def cn2sd_tabular(dataset,encoder, blackbox, target_class = 'yes', random_seed=4
     np.random.seed(random_seed)
 
     # re-labelled the data
-    labels = blackbox(encoder.transform(dataset.X))
+    labels = blackbox(encoder(dataset.X))
     data_table = Orange.data.Table(dataset.domain, dataset.X, labels)
 
 
