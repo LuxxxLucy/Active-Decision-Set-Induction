@@ -1,9 +1,36 @@
 # import general package function
 import numpy as np
+import heapq
 import math
-
+from copy import deepcopy
 # import local function
-from objective import objective
+# from objective import objective
+
+
+def simple_objective(solution,X,Y,parameter=0.01):
+    theta = len(get_correct_cover_ruleset(solution,X,Y)) * 1.0 / len(X)
+    return theta - parameter * len(solution)
+
+def get_incorrect_cover_ruleset(solution,X,Y):
+    curr_covered_or_not = np.zeros(X.shape[0], dtype=np.bool)
+    for r in solution:
+        curr_covered_or_not |= r.evaluate_data(X)
+    return np.where(Y.astype(np.bool)!=curr_covered_or_not)[0]
+
+def get_correct_cover_ruleset(solution,X,Y):
+    curr_covered_or_not = np.zeros(X.shape[0], dtype=np.bool)
+    for r in solution:
+        curr_covered_or_not |= r.evaluate_data(X)
+    return np.where(Y.astype(np.bool)==curr_covered_or_not)[0]
+
+def best_and_second_best_action(actions):
+    try:
+        tmp = heapq.nlargest(2,actions)
+        return tmp[0],tmp[1]
+    except:
+        print("strang thing happened, there is only one action")
+        null_action = deepcopy(tmp[0]); null_action.make_hopeless()
+        return tmp[0],
 
 
 # Helper function for smooth_local_search routine: Computes the 'estimate' of optimal value using random search

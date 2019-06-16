@@ -1,3 +1,32 @@
+import re
+from structure import Condition
+
+
+def add_condition(rule,rule_idx,attribute_idx,value,domain):
+    '''
+    add a condition into a rule
+    '''
+    attribute = domain.attributes[attribute_idx]
+    col_idx = attribute_idx
+    if attribute.is_discrete:
+        s = Condition(column=col_idx,values=[value],type='categorical')
+        rule.conditions.append(s)
+    elif attribute.is_continuous:
+        c = re.split( "- | ",value)
+        max_value = domain.attributes[attribute_idx].max
+        min_value = domain.attributes[attribute_idx].min
+        if len(c) == 2:
+            if c[0] in ['<=','≤','<']:
+                s = Condition(column=col_idx,max_value=float(c[1]),type='continuous',possible_range=(min_value,max_value))
+            else:
+                s = Condition(column=col_idx,min_value=float(c[1]),type='continuous',possible_range=(min_value,max_value))
+            rule.conditions.append(s)
+        if len(c) == 3:
+            s = Condition(column=col_idx,min_value=float(c[0]),max_value=float(c[2]),type='continuous',possible_range=(min_value,max_value))
+            rule.conditions.append(s)
+    else:
+        raise ValueError('not possible, must be discrete or continuous:',attribute)
+
 def encoder_from_datatable(data_table):
     from sklearn.preprocessing import StandardScaler, OneHotEncoder
     from sklearn.compose import make_column_transformer
@@ -17,11 +46,13 @@ def encoder_from_datatable(data_table):
     return preprocess_encoder
 
 def itemsets_to_rules(itemsets,domain,decoder_item_to_feature,target_class):
+
+
     from structure import Condition,Rule
     import re
     rule_set = []
     col_names = [it.name for it in domain.attributes]
-    possible_range = [ (it.min,it.max) if it.is_continuous else None for it in domain.attributes   ]
+    possible_range = [ (it.min,it.max) if it.is_continuous else (0,0) for it in domain.attributes   ]
     for itemset,_ in itemsets:
         previous_cols =[]
         conditions=[]

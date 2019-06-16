@@ -8,6 +8,7 @@ Mainly two functions:
 '''
 
 
+
 # compute the maximum length of any rule in the candidate rule set
 def max_rule_length(list_rules):
     len_arr = []

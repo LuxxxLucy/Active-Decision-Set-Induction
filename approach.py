@@ -9,6 +9,7 @@ import Orange
 
 # import local package
 from model import ADS
+from core import best_and_second_best_action
 
 def explain_tabular(dataset,encoder, blackbox, target_class='yes', pre_label=True, random_seed=42):
     '''
@@ -28,18 +29,30 @@ def explain_tabular(dataset,encoder, blackbox, target_class='yes', pre_label=Tru
         labels = blackbox(encoder(dataset.X))
         dataset = Orange.data.Table(dataset.domain, dataset.X, labels)
 
+    # initialize with the true data instances
     explainer = ADS(dataset, blackbox, encoder, target_class=target_class) # fit the explainer to the data
     explainer.set_parameters() # set hyperparameter
-    explainer.generate_rule_space() # pre-processing: rule space generation
-    explainer.initialize() # initialize
+
+    explainer.initialize() # initialize the decision set as empty
+
+    explainer.initialize_synthetic_dataset() # initialize synthetic dataset as empty
     while(explainer.termination_condition() == False):
+        # print(explainer.current_obj,len(explainer.current_solution))
         # the local search: main algorithm
         actions = explainer.generate_action_space() # generating possible actions
-        explainer.act(actions) # select an action!
-        explainer.update()
+        a_star,a_prime = best_and_second_best_action(actions)
+        while(a_prime.upper() > a_star.lower() ):
+            print("now this line should never occur since now it is only passive")
+            X_new = explainer.generate_synthetic_instances(a_star,a_prime)
+            explainer.update(actions,X_new)
+            a_star,a_prime = best_and_second_best_action(actions)
+
+        explainer.update_best_solution(a_star) # update best solution
+        explainer.update_current_solution(a_star,actions) #take the greedy or take random
+        explainer.update() # count += 1
 
 
-    # post-processing the rule representation
+    print(explainer.compute_accuracy())
     rule_set = explainer.output()
     print("okay!")
     return rule_set
