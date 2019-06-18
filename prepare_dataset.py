@@ -13,7 +13,7 @@ return dataset is a Orange Table.
 I really don't like Pandas....
 '''
 
-def prepare_2d_sinusoidal_dataset():
+def prepare_2d_sinusoidal_dataset(number=100):
     np.random.seed(42)
     random.seed(42)
     def myfunc(x,y):
@@ -35,7 +35,7 @@ def prepare_2d_sinusoidal_dataset():
                     [DiscreteVariable("hit", ("no", "yes"))])
     data = Table(domain, X, Y)
 
-    final_data_table = Table(data.domain, random.sample(data, 100))
+    final_data_table = Table(data.domain, random.sample(data, number))
 
     return final_data_table
 

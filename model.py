@@ -11,8 +11,9 @@ import random
 
 # import local package
 from utils import rule_to_string
-from core import simple_objective,get_incorrect_cover_ruleset
+from core import simple_objective,get_correct_cover_ruleset,get_symmetric_difference,sample_new_instances
 from structure import DecisionSet
+
 
 class ADS(DecisionSet):
     '''
@@ -41,12 +42,19 @@ class ADS(DecisionSet):
 
     def initialize_synthetic_dataset(self):
         self.synthetic_data_table = Orange.data.Table.from_domain(domain=self.domain,n_rows=0) # synthetic data (now empty)
+
+        X,Y = self.data_table.X,self.data_table.Y
+        X_prime,Y_prime = self.synthetic_data_table.X,self.synthetic_data_table.Y
+        self.total_X = np.append(X, X_prime, axis=0)
+        self.total_Y = np.append(Y, Y_prime, axis=0)
+
         return
 
-    def set_parameters(self):
+    def set_parameters(self,beta):
+        # self.N_iter_max = 10
         self.N_iter_max = 1000
         self.N_batch = 10
-        self.beta = 10
+        self.beta = beta
         self.epsilon = 0.01
         return
 
@@ -84,26 +92,35 @@ class ADS(DecisionSet):
         self.current_solution = a.new_solution
         return
 
-    def update(self):
-        self.count+=1
 
     def generate_action_space(self):
-        X,Y = self.data_table.X,self.data_table.Y
-        X_prime,Y_prime = self.synthetic_data_table.X,self.synthetic_data_table.Y
-        X = np.append(X, X_prime, axis=0)
-        Y = np.append(Y, Y_prime, axis=0)
-        actions = self.generate_action(X,Y)
-        # self.solution_neighbors = [ random.sample(self.rule_space,3) for _ in range(10)]
-        # best_neighbor = max(self.solution_neighbors, key= lambda x: objective(x,self.rule_space,self.data_table.X,self.data_table.Y,self.lambda_array) )
-        # current_obj = objective(best_neighbor,self.rule_space,self.data_table.X,self.data_table.Y,self.lambda_array)
-        # if current_obj >= self.best_obj:
-        #     self.best_obj = current_obj
-        #     self.best_solution = best_neighbor
+
+        actions = self.generate_action(self.total_X,self.total_Y,beta=self.beta)
         return actions
+
+    def generate_synthetic_instances(self,a_star,a_prime):
+        region_1,region_2 = get_symmetric_difference(a_star,a_prime,self.domain)
+        X_new = sample_new_instances(region_1,region_2,self.total_X,self.total_Y,self.domain)
+
+        return X_new
+
+    def update_actions(self,actions,a_star,a_prime,X_new):
+        labels = self.blackbox(self.encoder(X_new))
+        XY_new = Orange.data.Table(self.domain, X_new, labels)
+        self.synthetic_data_table.extend(XY_new)
+        self.total_X = np.append(self.total_X, XY_new.X, axis=0)
+        self.total_Y = np.append(self.total_Y, XY_new.Y, axis=0)
+
+        for a in actions:
+            a.update_objective(self.total_X,self.total_Y,self.domain)
+        return actions
+
+    def update(self):
+        self.count+=1
 
     def output(self):
         return self.best_solution
 
     def compute_accuracy(self):
-        theta = len(get_incorrect_cover_ruleset(self.current_solution,self.data_table.X,self.data_table.Y)) * 1.0 / len(self.data_table.X)
+        theta = len(get_correct_cover_ruleset(self.current_solution,self.data_table.X,self.data_table.Y)) * 1.0 / len(self.data_table.X)
         return theta
