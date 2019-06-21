@@ -56,6 +56,12 @@ class ADS(DecisionSet):
         self.N_batch = 10
         self.beta = beta
         self.epsilon = 0.01
+
+
+        self.supp = 50
+        self.maxlen=3
+        print("target class is:",self.target_class,". Its index is",self.target_class_idx)
+        # TODO: add hyperparameter print
         return
 
 
@@ -63,7 +69,7 @@ class ADS(DecisionSet):
         self.termination = False
         # self.current_solution = random.sample(self.rule_space,3)
         self.current_solution = []
-        self.current_obj = simple_objective(self.current_solution,self.data_table.X,self.data_table.Y)
+        self.current_obj = simple_objective(self.current_solution,self.data_table.X,self.data_table.Y,target_class_idx=self.target_class_idx)
         self.best_obj = self.current_obj
         self.best_solution = self.current_solution
 
@@ -79,7 +85,8 @@ class ADS(DecisionSet):
         if self.best_obj < best_action.obj_estimation():
             self.best_obj = best_action.obj_estimation()
             self.best_solution = best_action.new_solution
-            print("new best obj:",self.best_obj)
+            # todo: add obj update in the tqdm log
+            # print("new best obj:",self.best_obj)
         return
 
     def update_current_solution(self,best_action,actions):
@@ -112,7 +119,7 @@ class ADS(DecisionSet):
         self.total_Y = np.append(self.total_Y, XY_new.Y, axis=0)
 
         for a in actions:
-            a.update_objective(self.total_X,self.total_Y,self.domain)
+            a.update_objective(self.total_X,self.total_Y,self.domain,target_class_idx=self.target_class_idx)
         return actions
 
     def update(self):
@@ -122,5 +129,5 @@ class ADS(DecisionSet):
         return self.best_solution
 
     def compute_accuracy(self):
-        theta = len(get_correct_cover_ruleset(self.current_solution,self.data_table.X,self.data_table.Y)) * 1.0 / len(self.data_table.X)
+        theta = len(get_correct_cover_ruleset(self.current_solution,self.data_table.X,self.data_table.Y,target_class_idx=self.target_class_idx)) * 1.0 / len(self.data_table.X)
         return theta

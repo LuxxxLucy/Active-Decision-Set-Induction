@@ -422,7 +422,9 @@ class BDS(object):
                 """
 
                 if self.type == 'categorical':
-                    return Selector.OPERATORS['in'](X[:,self.column], self.values)
+                    return np.logical_or.reduce(
+                    [np.equal(X[:,self.column], v) for v in self.values ]
+                    )
                 elif self.type == 'continuous':
                     return np.logical_and(
                     Selector.OPERATORS['<='](X[:,self.column], self.max),

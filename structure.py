@@ -35,6 +35,7 @@ class Condition():
     '''
     OPERATORS = {
         # discrete, nominal variables
+        # 'in': lambda x,y: all( [operator.contains(y,x_tmp) for x_tmp in x ],
         'in': lambda x,y: operator.contains(y,x),
         # continuous variables
         '<=': operator.le,
@@ -69,7 +70,19 @@ class Condition():
         Filter several instances concurrently. Retunrs array of bools
         """
         if self.type == 'categorical':
-            return Condition.OPERATORS['in'](X[:,self.column], self.values)
+            # return Condition.OPERATORS['in'](X[:,self.column],self.values)
+            try:
+                return np.logical_or.reduce(
+                [np.equal(X[:,self.column], v) for v in self.values ]
+                )
+            except:
+                print(self.values)
+                print(X[:5,self.column])
+                print(np.logical_or.reduce(
+                [np.equal(X[:5,self.column], v) for v in self.values ]
+                ))
+                quit()
+
         elif self.type == 'continuous':
             return np.logical_and(
             Condition.OPERATORS['<='](X[:,self.column], self.max),
@@ -78,9 +91,10 @@ class Condition():
 
     def __eq__(self, other):
         # return self.selectors == other.selectors
+
         if self.type != other.type:
-            raise Exception('two selector should have the same type. The value of s1 was: {0} and the type of s2 was: {1}'.format(self.type,other.type))
-            return
+            # raise Exception('two selector should have the same type. The value of s1 was: {0} and the type of s2 was: {1}'.format(self.type,other.type))
+            return False
 
         if self.type == 'categorical':
             return self.values == other.values
@@ -124,7 +138,7 @@ class Condition():
 
     def sample(self,batch_size=10):
         if self.type == 'categorical':
-            synthetic_column = np.random.choice(self.values,size=batch_size)
+            synthetic_column = np.random.choice(range(len(self.values)),size=batch_size)
             return synthetic_column
         elif self.type == 'continuous':
             synthetic_column = np.random.uniform(low=self.min,high=self.max,size=batch_size)
@@ -136,9 +150,13 @@ class Condition():
         '''
         if self.type == 'categorical':
             exact_value = x[self.column]
-            if exact_value not in domain.attributes[self.column].values:
-                raise ValueError("unknow error happens in modify_to_cover.. The value is not fitted in the domain: the exact value is ",exact_value," and the domain of this feature is",domain.attributes[self.column].values)
-            self.values.append(exact_value)
+            if exact_value not in range(len(domain.attributes[self.column].values)):
+                raise ValueError("unknow error happens in modify_to_not_cover.. The value is not fitted in the domain: the exact value is of index ",exact_value," and the domain of this feature is",domain.attributes[self.column].values,"in total",len(domain.attributes[self.column].values),"values ranging from 0")
+            if exact_value not in self.values:
+                self.values.append(exact_value)
+                return True
+            else:
+                return False
         elif self.type == 'continuous':
             exact_value = x[self.column]
             if exact_value > self.max:
@@ -157,6 +175,7 @@ class Condition():
                 print(self.column,self.min,self.max)
                 print()
                 raise ValueError("unknow error, happens in modify_to_cover. the exact value is ",exact_value, "current condition value is (min,max)", self.min, self.max ," and the domain of this feature is (max)",domain.attributes[self.column].max,"(min)",domain.attributes[self.column].min)
+            return True
         else:
             raise ValueError("not possible, type either categorical or continuous")
 
@@ -184,9 +203,17 @@ class Condition():
         '''
         if self.type == 'categorical':
             exact_value = x[self.column]
-            if exact_value not in domain.attributes[self.column].values:
-                raise ValueError("unknow error happens in modify_to_not_cover.. The value is not fitted in the domain: the exact value is ",exact_value," and the domain of this feature is",domain.attributes[self.column].values)
-            self.values.remove(exact_value)
+            if exact_value not in range(len(domain.attributes[self.column].values)):
+                raise ValueError("unknow error happens in modify_to_not_cover.. The value is not fitted in the domain: the exact value is of index ",exact_value," and the domain of this feature is",domain.attributes[self.column].values,"in total",len(domain.attributes[self.column].values),"values ranging from 0")
+            if exact_value in self.values:
+                self.values.remove(exact_value)
+                if len(self.values) == 0:
+                    # it means it now has no possible value.
+                    return False
+                else:
+                    return True
+            else:
+                return False
         elif self.type == 'continuous':
             exact_value = x[self.column]
             # round continuous variable into minimum threshold
@@ -203,12 +230,13 @@ class Condition():
                 self.min = max(self.min,domain.attributes[self.column].min)
             else:
                 raise ValueError("unknow error, happens in modify_to_not_cover. the exact value is ",exact_value," and the domain of this feature is (max)",domain.attributes[self.column].max,"(min)",domain.attributes[self.column].min)
+            return True
         else:
             raise ValueError("not possible, type either categorical or continuous")
 
     def compute_volume(self,domain):
         if self.type == 'categorical':
-            return len(self.values) * 1.0 / len(domain.attributes[sel.column].values)
+            return len(self.values) * 1.0 / len(domain.attributes[self.column].values)
         elif self.type == 'continuous':
             return (self.max-self.min) / (domain.attributes[self.column].max-domain.attributes[self.column].min)
 
@@ -345,12 +373,12 @@ class DecisionSet():
         return
 
     def generate_action(self,X,Y,beta=1000):
-        incorrect_instances = get_incorrect_cover_ruleset(self.current_solution,X,Y)
+        incorrect_instances = get_incorrect_cover_ruleset(self.current_solution,X,Y,target_class_idx=self.target_class_idx)
         if len(incorrect_instances) != 0:
             anchor_instance = random.choice(incorrect_instances)
             N = len(self.current_solution)
             t = random.random()
-            if Y[anchor_instance]==1 or N<=1:
+            if Y[anchor_instance]== self.target_class_idx or N<=1:
                 if t<1.0/3 or N <= 1:
                     mode = 'ADD_RULE'       # action: add rule
                 elif t < 2.0/3 :
@@ -369,10 +397,16 @@ class DecisionSet():
 
 
         actions = []
-        self.current_obj = simple_objective(self.current_solution,X,Y)
+        self.current_obj = simple_objective(self.current_solution,X,Y,target_class_idx=self.target_class_idx)
+        # TODO: delete
+        # from utils import rule_to_string
+        # for c in self.current_solution:
+        #     print(rule_to_string(c,self.domain,self.target_class_idx))
+        #     print(c.get)
+        # quit()
 
         if mode == 'ADD_RULE':
-            if not hasattr(self, 'rule_space'):
+            if not hasattr(self,"rule_space"):
                 self.generate_rule_space()
             for candidate_rule_to_add in self.rule_space:
                 # if candidate_rule.filter_instance(X[anchor_instance]) == True:
@@ -382,11 +416,11 @@ class DecisionSet():
                 #     continue
                 if candidate_rule_to_add in self.current_solution:
                     continue
-                action = Action(self.current_solution,('ADD_RULE',candidate_rule_to_add),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta)
+                action = Action(self.current_solution,('ADD_RULE',candidate_rule_to_add),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx)
                 actions.append(action)
         elif mode == 'REMOVE_RULE':
             for candidate_rule_to_remove in self.current_solution:
-                action = Action(self.current_solution,('REMOVE_RULE',candidate_rule_to_remove),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta)
+                action = Action(self.current_solution,('REMOVE_RULE',candidate_rule_to_remove),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx)
                 actions.append(action)
         elif mode == 'REMOVE_CONDITION':
             for rule_idx,rule in enumerate(self.current_solution):
@@ -396,9 +430,9 @@ class DecisionSet():
                     rule.compute_volume(self.domain)
                     if len(rule_new.conditions) == 0:
                         # which means there is only one condition in this rule, remove this condition means to remove the entire rule
-                        action = Action(self.current_solution,('REMOVE_RULE',rule),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta)
+                        action = Action(self.current_solution,('REMOVE_RULE',rule),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx)
                     else:
-                        action = Action(self.current_solution,('REPLACE_RULE',rule,rule_new),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta)
+                        action = Action(self.current_solution,('REMOVE_CONDITION',rule,rule_new),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx)
                     actions.append(action)
         elif mode == 'ADD_CONDITION':
             for rule_idx,rule in enumerate(self.current_solution):
@@ -407,12 +441,11 @@ class DecisionSet():
                     if attribute_idx in used_attribute_columns:
                         continue
                     if attribute.is_discrete:
-                        for possible_value in attribute.values:
-                            print("------",possible_value)
+                        for possible_value_idx in range(len(attribute.values)):
                             rule_new = deepcopy(rule)
-                            rule_new.add_condition(rule_idx,attribute_idx,value)
+                            rule_new.add_condition(rule_idx,attribute_idx,possible_value_idx,self.domain)
                             rule_new.compute_volume(self.domain)
-                            action = Action(self.current_solution,('REPLACE_RULE',rule,rule_new),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta)
+                            action = Action(self.current_solution,('ADD_CONDITION',rule,rule_new),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx)
                             actions.append(action)
                     elif attribute.is_continuous:
                         # we use the discretized bin for continuous.
@@ -421,7 +454,7 @@ class DecisionSet():
                         for possible_value in self.disc_data_table.domain.attributes[attribute_idx].values:
                             rule_new = deepcopy(rule)
                             rule_new.add_condition(rule_idx,attribute_idx,possible_value,self.domain)
-                            action = Action(self.current_solution,('REPLACE_RULE',rule,rule_new),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta)
+                            action = Action(self.current_solution,('ADD_CONDITION',rule,rule_new),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx)
                             actions.append(action)
         elif mode == 'EXPAND_CONDITION':
             # try:
@@ -431,10 +464,12 @@ class DecisionSet():
                         # then we do not have to modify this condition
                         continue
                     rule_new = deepcopy(rule)
-                    rule_new.conditions[condition_idx].modify_to_cover(X[anchor_instance],self.domain)
-                    rule_new.compute_volume(self.domain)
-                    action = Action(self.current_solution,('REPLACE_RULE',rule,rule_new),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta)
-                    actions.append(action)
+                    if rule_new.conditions[condition_idx].modify_to_cover(X[anchor_instance],self.domain) == True:
+                        rule_new.compute_volume(self.domain)
+                        action = Action(self.current_solution,('EXPAND_CONDITION',rule,rule_new),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx)
+                        actions.append(action)
+                    else:
+                        continue
             # except:
             #     for e in self.current_solution:
             #         print(rule_to_string(e,self.domain,self.target_class_idx))
@@ -447,10 +482,12 @@ class DecisionSet():
             for rule in self.current_solution:
                 for condition_idx,condition in enumerate(rule.conditions):
                     rule_new = deepcopy(rule)
-                    rule_new.conditions[condition_idx].modify_to_not_cover(X[anchor_instance],self.domain)
-                    rule_new.compute_volume(self.domain)
-                    action = Action(self.current_solution,('REPLACE_RULE',rule,rule_new),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta)
-                    actions.append(action)
+                    if rule_new.conditions[condition_idx].modify_to_not_cover(X[anchor_instance],self.domain) == True:
+                        rule_new.compute_volume(self.domain)
+                        action = Action(self.current_solution,('SPECIFY_CONDITION',rule,rule_new),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx)
+                        actions.append(action)
+                    else:
+                        continue
         else:
             raise ValueError("not implement this mode:", mode)
 
@@ -460,7 +497,7 @@ class DecisionSet():
 
         # TODO: handling action error where there is no action generated
         if len(actions) <= 0:
-            raise ValueError("no actions, len length of actions",len(actions),"in the mode of ",mode)
+            raise ValueError("no plausible actions, len length of actions",len(actions),"in the mode of ",mode)
 
         return actions
 
@@ -470,8 +507,11 @@ class DecisionSet():
         using fp-growth to generate the space of rules.
         note that it needs itemset, so the first step is to translate the data in the form of item set
         """
-        self.maxlen = 10
-        self.supp = 1
+
+        maxlen = self.maxlen
+
+        supp = self.supp
+        print("start Generating rule space. Max len:",maxlen," Min support:",supp)
 
         positive_indices = np.where(self.data_table.Y == self.target_class_idx)[0]
 
@@ -484,10 +524,13 @@ class DecisionSet():
         self.disc_data_table = disc_data_table
 
         X,mapping = OneHot.encode(disc_data_table,include_class=False)
-        itemsets = list(frequent_itemsets(X,self.supp))
+        itemsets = list(frequent_itemsets(X,supp))
         decoder_item_to_feature = { idx:(feature.name,value) for idx,feature,value in OneHot.decode(mapping,disc_data_table,mapping)}
 
         self.rule_space = self.itemsets_to_rules(itemsets,self.domain,decoder_item_to_feature,self.target_class)
+        print("Generating rule space okay. Total number:",len(self.rule_space))
+
+        # self.rule_screening()
 
         # TODO: print pre-mined rules
         # for r in self.rule_space:
@@ -518,7 +561,7 @@ class DecisionSet():
                             conditions.append(s)
                     else:
                         # categorical
-                        s = Condition(column=col_idx,values=[string_conditions],type='categorical')
+                        s = Condition(column=col_idx,values=[domain.attributes[col_idx].values.index(string_conditions)],type='categorical')
                         conditions.append(s)
                 else:
                     s = conditions[ previous_cols.index(col_idx) ]
@@ -536,7 +579,7 @@ class DecisionSet():
                             s.min = min(s.min,float(c[0]))
                     else:
                         # categorical
-                        s.values.append(string_conditions)
+                        s.values.append(domain.attributes[col_idx].values.index(string_conditions))
                 previous_cols.append(col_idx)
 
             # merge, for example, merge "1<x<2" and "2<x<3" into "1<x<3"
@@ -545,10 +588,69 @@ class DecisionSet():
 
         return rule_set
 
+    def rule_screening(self):
+        ''' this screening process, the code is from the bayesian rule set paper. '''
+        N_screening = 2000
+
+        print ('Screening rules using information gain')
+        def accumulate(iterable, func=operator.add):
+            'Return running totals'
+            # accumulate([1,2,3,4,5]) --> 1 3 6 10 15
+            # accumulate([1,2,3,4,5], operator.mul) --> 1 2 6 24 120
+            it = iter(iterable)
+            total = next(it)
+            yield total
+            for element in it:
+                total = func(total, element)
+                yield total
+
+
+        from scipy.sparse import csc_matrix
+        import time
+        import itertools
+
+        # self.supp = 50
+
+        start_time = time.time()
+        indices = np.array(list(itertools.chain.from_iterable([[ r.column for r in rule.conditions] for rule in self.rule_space])))
+        len_rules = [len(rule.conditions) for rule in self.rule_space]
+        indptr =list(accumulate(len_rules))
+        indptr.insert(0,0)
+        indptr = np.array(indptr)
+        data = np.ones(len(indices))
+        ruleMatrix = csc_matrix((data,indices,indptr),shape = (len(self.domain.attributes),len( self.rule_space )))
+        # mat = np.matrix(df) * ruleMatrix
+        mat = self.total_X * ruleMatrix
+        Y_correct = np.equal(self.total_Y,self.target_class_idx)
+
+        lenMatrix = np.matrix([len_rules for i in range(self.total_X.shape[0])])
+        Z =  (mat ==lenMatrix).astype(int)
+        Zpos = [Z[i] for i in np.where(Y_correct>0)][0]
+        TP = np.array(np.sum(Zpos,axis=0).tolist()[0])
+        supp_select = np.where(TP>=self.supp*sum(Y_correct)/100)[0]
+        FP = np.array(np.sum(Z,axis = 0))[0] - TP
+        TN = len(Y_correct) - np.sum(Y_correct) - FP
+        FN = np.sum(Y_correct) - TP
+        p1 = TP.astype(float)/(TP+FP)
+        p2 = FN.astype(float)/(FN+TN)
+        pp = (TP+FP).astype(float)/(TP+FP+TN+FN)
+        tpr = TP.astype(float)/(TP+FN)
+        fpr = FP.astype(float)/(FP+TN)
+        cond_entropy = -pp*(p1*np.log(p1)+(1-p1)*np.log(1-p1))-(1-pp)*(p2*np.log(p2)+(1-p2)*np.log(1-p2))
+        cond_entropy[p1*(1-p1)==0] = -((1-pp)*(p2*np.log(p2)+(1-p2)*np.log(1-p2)))[p1*(1-p1)==0]
+        cond_entropy[p2*(1-p2)==0] = -(pp*(p1*np.log(p1)+(1-p1)*np.log(1-p1)))[p2*(1-p2)==0]
+        cond_entropy[p1*(1-p1)*p2*(1-p2)==0] = 0
+        select = np.argsort(cond_entropy[supp_select])[::-1][-N_screening:]
+        self.rule_space = [self.rule_space[i] for i in supp_select[select]]
+        # self.RMatrix = np.array(Z[:,supp_select[select]])
+        print ('\tTook %0.3fs to generate %d rules' % (time.time() - start_time, len(self.rule_space)) )
+
+
+
 
 class Action():
 
-    def __init__(self,current_solution,modification,X,Y,domain,current_obj,beta):
+    def __init__(self,current_solution,modification,X,Y,domain,current_obj,beta,target_class_idx=1):
         mode = modification[0]
         self.mode = mode
         self.current_solution = current_solution
@@ -557,19 +659,19 @@ class Action():
         if mode == 'ADD_RULE':
             _,add_rule = modification
             self.new_solution = deepcopy(self.current_solution); self.new_solution.append(add_rule)
-            self.empirical_obj = simple_objective(self.new_solution,X,Y)
+            self.empirical_obj = simple_objective(self.new_solution,X,Y,target_class_idx=target_class_idx)
         elif mode == 'REMOVE_RULE':
             _,remove_rule = modification
             self.new_solution = deepcopy(self.current_solution);
             self.remove_rule_idx = self.new_solution.index(remove_rule)
             del self.new_solution[self.remove_rule_idx]
-            self.empirical_obj = simple_objective(self.new_solution,X,Y)
-        elif mode == 'REPLACE_RULE':
+            self.empirical_obj = simple_objective(self.new_solution,X,Y,target_class_idx=target_class_idx)
+        elif mode in ['ADD_CONDITION','REMOVE_CONDITION','EXPAND_CONDITION','SPECIFY_CONDITION']:
             _,old_rule,new_rule = modification
             self.new_solution = deepcopy(self.current_solution)
             self.new_solution.remove(old_rule)
             self.new_solution.append(new_rule)
-            self.empirical_obj = simple_objective(self.new_solution,X,Y)
+            self.empirical_obj = simple_objective(self.new_solution,X,Y,target_class_idx=target_class_idx)
         else:
             raise ValueError("do not know this action mode:<",mode,">. Please check, or this mode is not implemented")
 
@@ -585,17 +687,18 @@ class Action():
         # # self.beta = self.total_volume / num
         # self.beta_interval = self.total_volume * self.beta / num
 
-        if self.mode in [ "ADD_RULE","REPLACE_RULE" ]:
-            region = self.new_solution[-1]
-        elif self.mode == "REMOVE_RULE":
-            region = self.current_solution[self.remove_rule_idx]
-        covered_instances = region.get_cover(X)
-        if len(covered_instances) <= 1:
-            largest_nearest_neighbour_distance = 1
-        else:
-            idx_distance_pairs = [ ( idx_1,min([ distance(X[idx_1], X[idx_2],domain) for idx_2 in covered_instances if idx_1 !=idx_2 ]) ) for idx_1 in covered_instances  ]
-            _,largest_nearest_neighbour_distance = max(idx_distance_pairs,key = lambda x:x[1])
-        self.beta_interval = self.beta * largest_nearest_neighbour_distance
+        # if self.mode in [ "ADD_RULE","REPLACE_RULE" ]:
+        #     region = self.new_solution[-1]
+        # elif self.mode == "REMOVE_RULE":
+        #     region = self.current_solution[self.remove_rule_idx]
+        # covered_instances = region.get_cover(X)
+        # if len(covered_instances) <= 1:
+        #     largest_nearest_neighbour_distance = 1
+        # else:
+        #     idx_distance_pairs = [ ( idx_1,min([ distance(X[idx_1], X[idx_2],domain) for idx_2 in covered_instances if idx_1 !=idx_2 ]) ) for idx_1 in covered_instances  ]
+        #     _,largest_nearest_neighbour_distance = max(idx_distance_pairs,key = lambda x:x[1])
+        # self.beta_interval = self.beta * largest_nearest_neighbour_distance
+        self.beta_interval = self.beta
 
     def make_hopeless(self):
         self.hopeless = True
@@ -604,8 +707,8 @@ class Action():
     def obj_estimation(self):
         return self.empirical_obj
 
-    def update_objective(self,X,Y,domain):
-        self.empirical_obj = simple_objective(self.new_solution,X,Y)
+    def update_objective(self,X,Y,domain,target_class_idx=1):
+        self.empirical_obj = simple_objective(self.new_solution,X,Y,target_class_idx=target_class_idx)
         # curr_covered_or_not = np.zeros(X.shape[0], dtype=np.bool)
         # for r in self.new_solution:
         #     curr_covered_or_not |= r.evaluate_data(X)
@@ -617,24 +720,26 @@ class Action():
             region = self.new_solution[-1]
         elif self.mode == "REMOVE_RULE":
             region = self.current_solution[self.remove_rule_idx]
-        covered_instances = region.get_cover(X)
-        if len(covered_instances) <= 1:
-            largest_nearest_neighbour_distance = 1
-        else:
-            idx_distance_pairs = [ ( idx_1,min([ distance(X[idx_1], X[idx_2],domain) for idx_2 in covered_instances if idx_1 !=idx_2 ]) ) for idx_1 in covered_instances  ]
-            _,largest_nearest_neighbour_distance = max(idx_distance_pairs,key = lambda x:x[1])
-            # max_distance = 0
-            # for i,idx_1 in enumerate(covered_instances):
-            #     min_distance = 100
-            #     for idx_2 in covered_instances[:i]:
-            #         if idx_1 == idx_2:
-            #             continue
-            #         else:
-            #             distance_12 = distance(X[idx_1], X[idx_2],domain)
-            #             if distance_12 < min_distance:
+        # covered_instances = region.get_cover(X)
+        # if len(covered_instances) <= 1:
+        #     largest_nearest_neighbour_distance = 1
+        # else:
+        #     idx_distance_pairs = [ ( idx_1,min([ distance(X[idx_1], X[idx_2],domain) for idx_2 in covered_instances if idx_1 !=idx_2 ]) ) for idx_1 in covered_instances  ]
+        #     _,largest_nearest_neighbour_distance = max(idx_distance_pairs,key = lambda x:x[1])
+        #     # max_distance = 0
+        #     # for i,idx_1 in enumerate(covered_instances):
+        #     #     min_distance = 100
+        #     #     for idx_2 in covered_instances[:i]:
+        #     #         if idx_1 == idx_2:
+        #     #             continue
+        #     #         else:
+        #     #             distance_12 = distance(X[idx_1], X[idx_2],domain)
+        #     #             if distance_12 < min_distance:
+        #
+        #
+        # self.beta_interval = self.beta * largest_nearest_neighbour_distance
+        self.beta_interval = self.beta_interval * 0.5
 
-
-        self.beta_interval = self.beta * largest_nearest_neighbour_distance
         return
 
     def __lt__(self,other):

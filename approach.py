@@ -31,6 +31,8 @@ def explain_tabular(dataset,encoder, blackbox, target_class='yes', pre_label=Tru
         labels = blackbox(encoder(dataset.X))
         dataset = Orange.data.Table(dataset.domain, dataset.X, labels)
 
+    error_log_list = []
+
     # initialize with the true data instances
     explainer = ADS(dataset, blackbox, encoder, target_class=target_class) # fit the explainer to the data
     explainer.set_parameters(beta=beta) # set hyperparameter
@@ -39,17 +41,19 @@ def explain_tabular(dataset,encoder, blackbox, target_class='yes', pre_label=Tru
 
     explainer.initialize_synthetic_dataset() # initialize synthetic dataset as empty
     # while(explainer.termination_condition() == False):
-    for _ in tqdm(range(explainer.N_iter_max)):
+    for iter_number in tqdm(range(explainer.N_iter_max)):
         # print(explainer.current_obj,len(explainer.current_solution))
         # the local search: main algorithm
 
-        # actions = explainer.generate_action_space() # generating possible actions
         try:
             actions = explainer.generate_action_space() # generating possible actions
         except Exception as e:
             print(e)
-            print("indicates actions for certain mode has no plausible actions at all")
+            error_log_list.append((iter_number,e))
             continue
+
+        # actions = explainer.generate_action_space() # generating possible actions
+
         a_star,a_prime = best_and_second_best_action(actions)
         tmp_count = 0
         while(a_prime.upper() > a_star.lower() +0.001 ) :
@@ -73,5 +77,12 @@ def explain_tabular(dataset,encoder, blackbox, target_class='yes', pre_label=Tru
     rule_set = explainer.output()
     print("the number of rules",len(rule_set))
     print("the number of new instances generated",len(explainer.synthetic_data_table))
-    print("okay!")
+    print("Now print Error Log")
+    if len(error_log_list) == 0:
+        print("no error happens")
+    else:
+        for iter_num,e in error_log_list:
+            print("at iteration:",iter_num,"happens the following error")
+            print(e)
+
     return rule_set,explainer

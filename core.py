@@ -31,6 +31,7 @@ def sample_new_instances(region_1,region_2,X,Y,domain,batch_size=10,population_s
         raw_X = np.column_stack(raw_X_columns)
         return raw_X
 
+
     def sample_new_for_one_rule(rule,previous_X):
         ''' the true sampling procedure
             1. we first extend the specfic region we wish to sampling
@@ -45,7 +46,7 @@ def sample_new_instances(region_1,region_2,X,Y,domain,batch_size=10,population_s
         for attri_col, attribute in enumerate(domain.attributes):
             if attri_col not in specified_columns:
                 if attribute.is_discrete:
-                    new_condition = Condition(column=attri_col,values=attribute.values,type='categorical')
+                    new_condition = Condition(column=attri_col,values= [ i for i in range(len(attribute.values)) ],type='categorical')
                 else:
                     new_condition = Condition(column=attri_col,max_value=attribute.max,min_value=attribute.min,type='continuous')
                 tmp_rule.conditions.append(new_condition)
@@ -75,7 +76,6 @@ def sample_new_instances(region_1,region_2,X,Y,domain,batch_size=10,population_s
         synthetic_instances = np.row_stack(synthetic_rows)
 
         return synthetic_instances
-
     new_X_1 = sample_new_for_one_rule(region_1,X)
     new_X_2 = sample_new_for_one_rule(region_2,X)
     return np.concatenate((new_X_1, new_X_2))
@@ -135,32 +135,34 @@ def get_symmetric_difference(a_1,a_2,domain):
     # print("print result over")
     # quit()
     # assert a_1.mode == a_2.mode,"Assertion Error:two actions have different mode!"
-    if a_1.mode in [ "ADD_RULE","REPLACE_RULE" ]:
-        region_1 = a_1.new_solution[-1]
-    elif a_1.mode == "REMOVE_RULE":
+    if a_1.mode == "REMOVE_RULE":
         region_1 = a_1.current_solution[a_1.remove_rule_idx]
-    if a_2.mode in [ "ADD_RULE","REPLACE_RULE" ]:
-        region_2 = a_2.new_solution[-1]
-    elif a_2.mode == "REMOVE_RULE":
+    else :
+        region_1 = a_1.new_solution[-1]
+    if a_2.mode == "REMOVE_RULE":
         region_2 = a_2.current_solution[a_2.remove_rule_idx]
+    else:
+        region_2 = a_2.new_solution[-1]
     return region_1,region_2
 
 
-def simple_objective(solution,X,Y,parameter=0.01):
-    theta = len(get_correct_cover_ruleset(solution,X,Y)) * 1.0 / len(X)
+def simple_objective(solution,X,Y,parameter=0.01,target_class_idx=1):
+    theta = len(get_correct_cover_ruleset(solution,X,Y,target_class_idx=target_class_idx)) * 1.0 / len(X)
     return theta - parameter * len(solution)
 
-def get_incorrect_cover_ruleset(solution,X,Y):
+def get_incorrect_cover_ruleset(solution,X,Y,target_class_idx=1):
     curr_covered_or_not = np.zeros(X.shape[0], dtype=np.bool)
     for r in solution:
         curr_covered_or_not |= r.evaluate_data(X)
-    return np.where(Y.astype(np.bool)!=curr_covered_or_not)[0]
+    corret_or_not = np.equal(Y,target_class_idx)
+    return np.where(corret_or_not != curr_covered_or_not)[0]
 
-def get_correct_cover_ruleset(solution,X,Y):
+def get_correct_cover_ruleset(solution,X,Y,target_class_idx=1):
     curr_covered_or_not = np.zeros(X.shape[0], dtype=np.bool)
     for r in solution:
         curr_covered_or_not |= r.evaluate_data(X)
-    return np.where(Y.astype(np.bool)==curr_covered_or_not)[0]
+    corret_or_not = np.equal(Y,target_class_idx)
+    return np.where(corret_or_not == curr_covered_or_not)[0]
 
 def best_and_second_best_action(actions):
     try:
