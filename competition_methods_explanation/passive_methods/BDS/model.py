@@ -27,10 +27,9 @@ class BDS(object):
     '''
     The Bayesian Decision Set model
     '''
-    def __init__(self,data_table, blackbox,encoder):
+    def __init__(self,data_table, blackbox):
         self.data_table = data_table
         self.blackbox = blackbox
-        self.encoder = encoder
 
         self.discretized_data_table,self.df,self.Y = table_to_binary_df(data_table)
         self.attributeLevelNum = defaultdict(int)

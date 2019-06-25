@@ -10,7 +10,7 @@ For reproducibility and open science, competition methods (baselines) are re-imp
 ## Requirements
 I assume you use anaconda.
 * `python3`: all the code and scripts should work on python-3.5. And by a large chance, it would run all fine in python 3.6 and above.
-* `scipy`, `numpy`, `scikit-learn`: the packages you should have.
+* `scipy`, `numpy`, `scikit-learn>= v0.20`: the packages you should have.
 * `Orange`: (I hate pandas!) The Orange package has a good representation of data, especially the `Domain` object.
 * `Orange Associate`: package for frequent itemset mining (FP-growth algorithm). `pip install Orange3-Associate`
 ---

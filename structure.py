@@ -379,7 +379,7 @@ class DecisionSet():
             N = len(self.current_solution)
             t = random.random()
             if Y[anchor_instance]== self.target_class_idx or N<=1:
-                if t<1.0/3 or N <= 1:
+                if t<1.0/3 or N <= 5:
                     mode = 'ADD_RULE'       # action: add rule
                 elif t < 2.0/3 :
                     mode = 'REMOVE_CONDITION' # action: replace
@@ -513,14 +513,15 @@ class DecisionSet():
         supp = self.supp
         print("start Generating rule space. Max len:",maxlen," Min support:",supp)
 
-        positive_indices = np.where(self.data_table.Y == self.target_class_idx)[0]
-
+        # positive_indices = np.where(self.data_table.Y == self.target_class_idx)[0]
+        # tmp_table = self.data_table[positive_indices]
+        tmp_table = Table.from_numpy(X=self.total_X,Y=self.total_Y,domain=self.domain)
         # first discretize the data
         disc = Orange.preprocess.Discretize()
         disc.method = Orange.preprocess.discretize.EqualFreq(n=5)
         # disc.method = Orange.preprocess.discretize.EntropyMDL(force=True)
         # disc.method = Orange.preprocess.discretize.EqualWidth(n=3)
-        disc_data_table = disc(self.data_table[positive_indices])
+        disc_data_table = disc(tmp_table)
         self.disc_data_table = disc_data_table
 
         X,mapping = OneHot.encode(disc_data_table,include_class=False)
@@ -530,7 +531,7 @@ class DecisionSet():
         self.rule_space = self.itemsets_to_rules(itemsets,self.domain,decoder_item_to_feature,self.target_class)
         print("Generating rule space okay. Total number:",len(self.rule_space))
 
-        # self.rule_screening()
+        self.rule_screening()
 
         # TODO: print pre-mined rules
         # for r in self.rule_space:
@@ -659,26 +660,57 @@ class Action():
         if mode == 'ADD_RULE':
             _,add_rule = modification
             self.new_solution = deepcopy(self.current_solution); self.new_solution.append(add_rule)
-            self.empirical_obj = simple_objective(self.new_solution,X,Y,target_class_idx=target_class_idx)
         elif mode == 'REMOVE_RULE':
             _,remove_rule = modification
             self.new_solution = deepcopy(self.current_solution);
             self.remove_rule_idx = self.new_solution.index(remove_rule)
+            self.remove_rule = remove_rule
             del self.new_solution[self.remove_rule_idx]
-            self.empirical_obj = simple_objective(self.new_solution,X,Y,target_class_idx=target_class_idx)
         elif mode in ['ADD_CONDITION','REMOVE_CONDITION','EXPAND_CONDITION','SPECIFY_CONDITION']:
             _,old_rule,new_rule = modification
             self.new_solution = deepcopy(self.current_solution)
             self.new_solution.remove(old_rule)
             self.new_solution.append(new_rule)
-            self.empirical_obj = simple_objective(self.new_solution,X,Y,target_class_idx=target_class_idx)
         else:
             raise ValueError("do not know this action mode:<",mode,">. Please check, or this mode is not implemented")
 
         self.beta=beta
 
+        self.update_objective(X,Y,domain,target_class_idx=target_class_idx)
         # TODO: select a good way to define confidence interval
 
+    def make_hopeless(self):
+        self.hopeless = True
+        self.empirical_obj = -10000
+
+    def obj_estimation(self):
+        return self.empirical_obj
+
+    def update_objective(self,X,Y,domain,target_class_idx=1):
+        self.empirical_obj = simple_objective(self.new_solution,X,Y,target_class_idx=target_class_idx)
+
+        if self.beta == 0:
+            self.beta_interval=0
+            return
+
+        from sklearn.neighbors import KDTree
+
+        if self.mode == 'REMOVE_RULE':
+            tmp_rule = self.remove_rule
+        elif self.mode in ['ADD_RULE','ADD_CONDITION','REMOVE_CONDITION','EXPAND_CONDITION','SPECIFY_CONDITION']:
+            tmp_rule = self.new_solution[-1]
+        else:
+            raise ValueError("do not know this action mode:<",mode,">. Please check, or this mode is not implemented")
+
+        from core import extend_rule,uniform_sampling
+        from sklearn.neighbors import KDTree
+        tmp_rule = extend_rule(tmp_rule,domain)
+        population = uniform_sampling(tmp_rule)
+        knn = KDTree(X)
+        distances,indices = knn.query(population, k=5)
+
+        max_nearest_distance = max([ (i,d) for i,d in enumerate(distances)], key = lambda x:x[1][0] )[1][0]
+        self.beta_interval = max_nearest_distance * self.beta
         # curr_covered_or_not = np.zeros(X.shape[0], dtype=np.bool)
         # for r in self.new_solution:
         #     curr_covered_or_not |= r.evaluate_data(X)
@@ -698,7 +730,42 @@ class Action():
         #     idx_distance_pairs = [ ( idx_1,min([ distance(X[idx_1], X[idx_2],domain) for idx_2 in covered_instances if idx_1 !=idx_2 ]) ) for idx_1 in covered_instances  ]
         #     _,largest_nearest_neighbour_distance = max(idx_distance_pairs,key = lambda x:x[1])
         # self.beta_interval = self.beta * largest_nearest_neighbour_distance
-        self.beta_interval = self.beta
+
+
+        # curr_covered_or_not = np.zeros(X.shape[0], dtype=np.bool)
+        # for r in self.new_solution:
+        #     curr_covered_or_not |= r.evaluate_data(X)
+        # num = np.sum(curr_covered_or_not)
+        # self.total_volume = sum([ r.compute_volume(domain) for r in self.new_solution ])
+        # # self.beta = self.total_volume / num
+        #
+        # self.beta_interval = self.total_volume * self.beta / num
+
+        return
+
+    def __lt__(self,other):
+        '''
+        this less than comparision is crucial... make sure to implement it.
+        As it will be used to select the best and second best action. as in the function in `core.py`
+        '''
+        return self.obj_estimation() < other.obj_estimation()
+
+    def interval(self):
+        return self.beta_interval
+
+    def upper(self):
+        return self.obj_estimation() + self.interval()
+    def lower(self):
+        return self.obj_estimation() - self.interval()
+
+class Candidate():
+
+    def __init__(self,current_solution,X,Y,domain,beta,target_class_idx=1):
+        self.current_solution = current_solution
+        self.hopeless = False
+        self.beta=beta
+        self.update_objective(X,Y,domain,target_class_idx=target_class_idx)
+        # TODO: select a good way to define confidence interval
 
     def make_hopeless(self):
         self.hopeless = True
@@ -708,37 +775,55 @@ class Action():
         return self.empirical_obj
 
     def update_objective(self,X,Y,domain,target_class_idx=1):
-        self.empirical_obj = simple_objective(self.new_solution,X,Y,target_class_idx=target_class_idx)
+        self.empirical_obj = simple_objective(self.current_solution,X,Y,target_class_idx=target_class_idx)
+
+        if self.beta == 0:
+            self.beta_interval=0
+            return
+
+        from core import extend_rule,uniform_sampling
+        from sklearn.neighbors import KDTree
+        popu_list = []
+        for tmp_rule in self.current_solution:
+            tmp_rule = extend_rule(tmp_rule,domain)
+            population_tmp = uniform_sampling(tmp_rule)
+            popu_list.append(population_tmp)
+        population = np.vstack(popu_list)
+
+        knn = KDTree(X)
+        distances,indices = knn.query(population, k=5)
+
+        max_nearest_distance = max([ (i,d) for i,d in enumerate(distances)], key = lambda x:x[1][0] )[1][0]
+        self.beta_interval = max_nearest_distance * self.beta
         # curr_covered_or_not = np.zeros(X.shape[0], dtype=np.bool)
         # for r in self.new_solution:
         #     curr_covered_or_not |= r.evaluate_data(X)
         # num = np.sum(curr_covered_or_not)
+        # self.total_volume = sum([ r.compute_volume(domain) for r in self.new_solution ])
         # # self.beta = self.total_volume / num
         # self.beta_interval = self.total_volume * self.beta / num
 
-        if self.mode in [ "ADD_RULE","REPLACE_RULE" ]:
-            region = self.new_solution[-1]
-        elif self.mode == "REMOVE_RULE":
-            region = self.current_solution[self.remove_rule_idx]
+        # if self.mode in [ "ADD_RULE","REPLACE_RULE" ]:
+        #     region = self.new_solution[-1]
+        # elif self.mode == "REMOVE_RULE":
+        #     region = self.current_solution[self.remove_rule_idx]
         # covered_instances = region.get_cover(X)
         # if len(covered_instances) <= 1:
         #     largest_nearest_neighbour_distance = 1
         # else:
         #     idx_distance_pairs = [ ( idx_1,min([ distance(X[idx_1], X[idx_2],domain) for idx_2 in covered_instances if idx_1 !=idx_2 ]) ) for idx_1 in covered_instances  ]
         #     _,largest_nearest_neighbour_distance = max(idx_distance_pairs,key = lambda x:x[1])
-        #     # max_distance = 0
-        #     # for i,idx_1 in enumerate(covered_instances):
-        #     #     min_distance = 100
-        #     #     for idx_2 in covered_instances[:i]:
-        #     #         if idx_1 == idx_2:
-        #     #             continue
-        #     #         else:
-        #     #             distance_12 = distance(X[idx_1], X[idx_2],domain)
-        #     #             if distance_12 < min_distance:
-        #
-        #
         # self.beta_interval = self.beta * largest_nearest_neighbour_distance
-        self.beta_interval = self.beta_interval * 0.5
+
+
+        # curr_covered_or_not = np.zeros(X.shape[0], dtype=np.bool)
+        # for r in self.current_solution:
+        #     curr_covered_or_not |= r.evaluate_data(X)
+        # num = np.sum(curr_covered_or_not)
+        # self.total_volume = sum([ r.compute_volume(domain) for r in self.new_solution ])
+        # # self.beta = self.total_volume / num
+        #
+        # self.beta_interval = self.total_volume * self.beta / num
 
         return
 

@@ -11,7 +11,7 @@ import random
 
 # import local package
 from utils import rule_to_string
-from core import simple_objective,get_correct_cover_ruleset,get_symmetric_difference,sample_new_instances
+from core import simple_objective,get_correct_cover_ruleset,get_symmetric_difference,sample_new_instances,sample_new_instances_for_solution
 from structure import DecisionSet
 
 
@@ -19,7 +19,7 @@ class ADS(DecisionSet):
     '''
     The Active Decision Set model
     '''
-    def __init__(self,data_table, blackbox,encoder,target_class='yes',seed=42):
+    def __init__(self,data_table, blackbox,target_class='yes',seed=42):
         random.seed(seed)
         self.count=0
 
@@ -33,7 +33,6 @@ class ADS(DecisionSet):
 
 
         self.blackbox = blackbox
-        self.encoder = encoder
 
         self.target_class = target_class
         # for example target_class = 'yes' and the domain Y is ['no','yes']
@@ -59,7 +58,8 @@ class ADS(DecisionSet):
 
 
         self.supp = 50
-        self.maxlen=3
+        # self.supp = 1
+        self.maxlen= 3
         print("target class is:",self.target_class,". Its index is",self.target_class_idx)
         # TODO: add hyperparameter print
         return
@@ -70,8 +70,11 @@ class ADS(DecisionSet):
         # self.current_solution = random.sample(self.rule_space,3)
         self.current_solution = []
         self.current_obj = simple_objective(self.current_solution,self.data_table.X,self.data_table.Y,target_class_idx=self.target_class_idx)
+        print("initial obj: ",self.current_obj)
         self.best_obj = self.current_obj
         self.best_solution = self.current_solution
+        if hasattr(self,'rule_space'):
+            delattr(self, 'rule_space')
 
     def termination_condition(self):
         if self.termination == True:
@@ -86,17 +89,27 @@ class ADS(DecisionSet):
             self.best_obj = best_action.obj_estimation()
             self.best_solution = best_action.new_solution
             # todo: add obj update in the tqdm log
-            # print("new best obj:",self.best_obj)
+            print("new best obj:",self.best_obj)
         return
 
     def update_current_solution(self,best_action,actions):
 
         t = random.random()
-        if t < self.epsilon:
+
+        if t < 0.001:
+            '''re-start'''
+            print("re-staring!!!!!!!!!!!!")
+            self.current_solution = []
+            self.current_obj = simple_objective(self.current_solution,self.data_table.X,self.data_table.Y,target_class_idx=self.target_class_idx)
+            if hasattr(self,'rule_space'):
+                delattr(self, 'rule_space')
+        elif t < self.epsilon:
             a = random.choice(actions)
+            self.current_solution = a.new_solution
+
         else:
             a = best_action
-        self.current_solution = a.new_solution
+            self.current_solution = a.new_solution
         return
 
 
@@ -107,12 +120,16 @@ class ADS(DecisionSet):
 
     def generate_synthetic_instances(self,a_star,a_prime):
         region_1,region_2 = get_symmetric_difference(a_star,a_prime,self.domain)
-        X_new = sample_new_instances(region_1,region_2,self.total_X,self.total_Y,self.domain)
+        X_new = sample_new_instances(region_1,region_2,self.total_X,self.total_Y,self.domain,self.blackbox)
+        return X_new
 
+    def generate_synthetic_instances_for_solution(self,sol_1,sol_2):
+        # region_1,region_2 = get_symmetric_difference(a_star,a_prime,self.domain)
+        X_new = sample_new_instances_for_solution(sol_1,sol_2,self.total_X,self.total_Y,self.domain,self.blackbox)
         return X_new
 
     def update_actions(self,actions,a_star,a_prime,X_new):
-        labels = self.blackbox(self.encoder(X_new))
+        labels = self.blackbox(X_new)
         XY_new = Orange.data.Table(self.domain, X_new, labels)
         self.synthetic_data_table.extend(XY_new)
         self.total_X = np.append(self.total_X, XY_new.X, axis=0)
@@ -122,6 +139,17 @@ class ADS(DecisionSet):
             a.update_objective(self.total_X,self.total_Y,self.domain,target_class_idx=self.target_class_idx)
         return actions
 
+    def update_candidates(self,solutions,c_star,c_prime,X_new):
+        labels = self.blackbox(X_new)
+        XY_new = Orange.data.Table(self.domain, X_new, labels)
+        self.synthetic_data_table.extend(XY_new)
+        self.total_X = np.append(self.total_X, XY_new.X, axis=0)
+        self.total_Y = np.append(self.total_Y, XY_new.Y, axis=0)
+
+        for a in solutions:
+            a.update_objective(self.total_X,self.total_Y,self.domain,target_class_idx=self.target_class_idx)
+        return solutions
+
     def update(self):
         self.count+=1
 
@@ -129,5 +157,5 @@ class ADS(DecisionSet):
         return self.best_solution
 
     def compute_accuracy(self):
-        theta = len(get_correct_cover_ruleset(self.current_solution,self.data_table.X,self.data_table.Y,target_class_idx=self.target_class_idx)) * 1.0 / len(self.data_table.X)
+        theta = len(get_correct_cover_ruleset(self.best_solution,self.total_X,self.total_Y,target_class_idx=self.target_class_idx)) * 1.0 / len(self.data_table.X)
         return theta
