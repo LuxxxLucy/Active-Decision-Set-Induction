@@ -1,3 +1,10 @@
+import numpy as np
+
+def ruleset_predict(ruleset,X):
+    curr_covered_or_not = np.zeros(X.shape[0], dtype=np.bool)
+    for r in ruleset:
+        curr_covered_or_not |= r.evaluate_data(X)
+    return curr_covered_or_not
 
 def data_table_from_dataframe(dataframe,Y_column_idx=0):
     import numpy as np
@@ -66,7 +73,7 @@ def encoder_from_datatable(data_table):
     return preprocess_encoder
 
 
-def rule_to_string_BDS_compat(rule,domain,target_class_idx):
+def rule_to_string_BRS_compat(rule,domain,target_class_idx):
     attributes = domain.attributes
     class_var = domain.class_var
     if rule.selectors:

@@ -9,7 +9,7 @@ from copy import deepcopy
 
 from sklearn.neighbors import KDTree
 
-def simple_objective(solution,X,Y,parameter=0.05,target_class_idx=1):
+def simple_objective(solution,X,Y,parameter=0.01,target_class_idx=1):
     curr_covered_or_not = np.zeros(X.shape[0], dtype=np.bool)
 
     for r in solution:
@@ -39,7 +39,7 @@ def sampling_criteria(x,neighbours,neighbors_distances,X,Y):
 
     y_estimated = sum([  (1/dist) * Y[idx] for idx,dist in zip(neighbours,neighbors_distances) ]) / sum([1/dist for dist in neighbors_distances])
     # s = neighbors_distances[0] + (y_estimated - 0.5 )
-    s = 10*neighbors_distances[0] - abs( y_estimated - 0.5 )
+    s = 15*neighbors_distances[0] - abs( y_estimated - 0.5 )
     return s
 
 def distance(x1,x2,domain):

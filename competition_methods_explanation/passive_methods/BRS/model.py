@@ -23,7 +23,7 @@ from scipy.stats.distributions import poisson, gamma, beta, bernoulli, binom
 # import local package
 from .util import table_to_binary_df
 
-class BDS(object):
+class BRS(object):
     '''
     The Bayesian Decision Set model
     '''
@@ -46,7 +46,7 @@ class BDS(object):
         Niteration = 500  # number of iterations in each chain
         Nchain = 2         # number of chains in the simulated annealing search algorithm
 
-        supp = 5           # 5% is a generally good number. The higher this supp, the 'larger' a pattern is
+        supp = 0.5           # 5% is a generally good number. The higher this supp, the 'larger' a pattern is
         maxlen = 3         # maxmum length of a pattern
 
         # \rho = alpha/(alpha+beta). Make sure \rho is close to one when choosing alpha and beta.
@@ -55,7 +55,9 @@ class BDS(object):
         alpha_2 = 500         # alpha_-
         beta_2 = 1       # beta_-
 
-        self.generate_rules(supp,maxlen,N,method='fpgrowth')
+        supp_num = int(X.shape[0]*supp)
+
+        self.generate_rules(supp_num,maxlen,N,method='fpgrowth')
         self.set_parameters(alpha_1,beta_1,alpha_2,beta_2,None,None)
         rules = self.SA_patternbased(Niteration,Nchain,print_message=False)
         return rules

@@ -378,8 +378,8 @@ class DecisionSet():
             anchor_instance = random.choice(incorrect_instances)
             N = len(self.current_solution)
             t = random.random()
-            if Y[anchor_instance]== self.target_class_idx or N<=1:
-                if t<1.0/3 or N <= 5:
+            if Y[anchor_instance]== self.target_class_idx or N<1:
+                if t<1.0/3 or N <1:
                     mode = 'ADD_RULE'       # action: add rule
                 elif t < 2.0/3 :
                     mode = 'REMOVE_CONDITION' # action: replace
@@ -395,7 +395,6 @@ class DecisionSet():
         else:
             mode = random.choice(['REMOVE_RULE','REMOVE_CONDITION' ,'ADD_CONDITION'])
 
-
         actions = []
         self.current_obj = simple_objective(self.current_solution,X,Y,target_class_idx=self.target_class_idx)
         # TODO: delete
@@ -406,18 +405,20 @@ class DecisionSet():
         # quit()
 
         if mode == 'ADD_RULE':
-            if not hasattr(self,"rule_space"):
-                self.generate_rule_space()
-            for candidate_rule_to_add in self.rule_space:
-                # if candidate_rule.filter_instance(X[anchor_instance]) == True:
-                #     action = Action(self.current_solution,('ADD_RULE',candidate_rule),X,Y,domain=self.domain,current_obj = self.current_obj)
-                #     actions.append(action)
-                # else:
-                #     continue
-                if candidate_rule_to_add in self.current_solution:
-                    continue
-                action = Action(self.current_solution,('ADD_RULE',candidate_rule_to_add),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx)
-                actions.append(action)
+            # if not hasattr(self,"rule_space"):
+            #     self.generate_rule_space()
+            new_rules = self.new_rule_generating()
+            if new_rules != None:
+                for candidate_rule_to_add in new_rules:
+                    # if candidate_rule.filter_instance(X[anchor_instance]) == True:
+                    #     action = Action(self.current_solution,('ADD_RULE',candidate_rule),X,Y,domain=self.domain,current_obj = self.current_obj)
+                    #     actions.append(action)
+                    # else:
+                    #     continue
+                    if candidate_rule_to_add in self.current_solution:
+                        continue
+                    action = Action(self.current_solution,('ADD_RULE',candidate_rule_to_add),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx)
+                    actions.append(action)
         elif mode == 'REMOVE_RULE':
             for candidate_rule_to_remove in self.current_solution:
                 action = Action(self.current_solution,('REMOVE_RULE',candidate_rule_to_remove),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx)
@@ -451,6 +452,14 @@ class DecisionSet():
                         # we use the discretized bin for continuous.
                         # the difference is trivial compared wtih estimating use info gain here.
                         # since we could always modify a condition using other actions.
+                        if not hasattr(self,"disc_data_table"):
+                            tmp_table = Table.from_numpy(X=self.total_X,Y=self.total_Y,domain=self.domain)
+                            disc = Orange.preprocess.Discretize()
+                            disc.method = Orange.preprocess.discretize.EqualFreq(n=5)
+                            # disc.method = Orange.preprocess.discretize.EntropyMDL(force=True)
+                            # disc.method = Orange.preprocess.discretize.EqualWidth(n=3)
+                            disc_data_table = disc(tmp_table)
+                            self.disc_data_table = disc_data_table
                         for possible_value in self.disc_data_table.domain.attributes[attribute_idx].values:
                             rule_new = deepcopy(rule)
                             rule_new.add_condition(rule_idx,attribute_idx,possible_value,self.domain)
@@ -501,6 +510,144 @@ class DecisionSet():
 
         return actions
 
+    def new_rule_generating(self,beam_size=10):
+        from Orange.data import _contingency
+        from Orange.classification.rules import BeamSearchAlgorithm,SearchStrategy,TopDownSearchStrategy,EntropyEvaluator,LengthEvaluator,GuardianValidator,LRSValidator,get_dist
+        from Orange.classification.rules import Rule as Rule_Orange
+        from Orange.preprocess.discretize import EntropyMDL,EqualFreq
+
+
+        class OurTopDownSearchStrategy(TopDownSearchStrategy):
+
+            @staticmethod
+            def discretize(X, Y, W, domain):
+                values, counts, other = _contingency.contingency_floatarray(
+                    X, Y.astype(dtype=np.intp), len(domain.class_var.values), W)
+                cut_ind = np.array(EntropyMDL(force=True)._entropy_discretize_sorted(counts.T, True))
+                # print(values)
+                # print(counts)
+                # print(other)
+                # print(cut_ind)
+                # # cut_ind = np.array(EqualFreq(n=5)._entropy_discretize_sorted(counts.T, True))
+                # print([values[smh] for smh in cut_ind])
+                # quit()
+                return [values[smh] for smh in cut_ind]
+
+        self.search_algorithm = BeamSearchAlgorithm()
+        self.search_strategy = OurTopDownSearchStrategy()
+
+        # search heuristics
+        self.quality_evaluator = EntropyEvaluator()
+        self.complexity_evaluator = LengthEvaluator()
+        # heuristics to avoid the over-fitting of noisy data
+        self.general_validator = GuardianValidator()
+        self.significance_validator = LRSValidator()
+
+        def rcmp(rule):
+            return rule.quality, rule.complexity
+
+        curr_covered_or_not = np.zeros(self.total_X.shape[0], dtype=np.bool)
+        for r in self.current_solution:
+            curr_covered_or_not |= r.evaluate_data(self.total_X)
+        indices = np.where( curr_covered_or_not == 0)[0]
+        # these are the not covered instances
+        X = self.total_X[indices]
+        Y = self.total_Y[indices].astype("int")
+        W = np.ones(X.shape[0])
+        base_rules = []
+        domain = self.data_table.domain
+        target_class = self.target_class_idx
+        prior_class_dist = get_dist(Y, W, domain)
+        initial_class_dist = get_dist(self.total_Y.astype("int"),np.ones(self.total_X.shape[0]),domain)
+        rules = self.search_strategy.initialise_rule(
+            X, Y, W, target_class, base_rules, domain,
+            initial_class_dist, prior_class_dist,
+            self.quality_evaluator, self.complexity_evaluator,
+            self.significance_validator, self.general_validator)
+
+
+        if not rules:
+            # return None
+            return None
+
+
+        rules = sorted(rules, key=rcmp, reverse=True)
+        best_rules = [rules[0]]
+        Best_rules = rules
+        BUDGET = 100
+        while len(rules) > 0:
+            candidates, rules = self.search_algorithm.select_candidates(rules)
+            for candidate_rule in candidates:
+                new_rules = self.search_strategy.refine_rule(
+                    X, Y, W, candidate_rule)
+                rules.extend(new_rules)
+                #remove default rule from list of rules
+                # if len(best_rules) == 0:
+                #     best_rule = new_rules[0]
+                # for new_rule in new_rules[1:]:
+                #     for i,best_rule in best_rules:
+                #         if (new_rule.quality > best_rule.quality and
+                #                 new_rule.is_significant() ):
+                #             best_rules[i] = new_rule
+
+            rules = sorted(rules, key=rcmp, reverse=True)
+            Best_rules.extend([ r for r in rules if r not in Best_rules] )
+            Best_rules = sorted(Best_rules,key=rcmp,reverse=True)[:100]
+            rules = self.search_algorithm.filter_rules(rules)
+
+        def Orange_rules_to_our(orange_rules,domain,target_class):
+            rule_set = []
+            col_names = [it.name for it in domain.attributes]
+            possible_range = [ (it.min,it.max) if it.is_continuous else (0,0) for it in domain.attributes   ]
+            for rule in orange_rules:
+                previous_cols =[]
+                conditions=[]
+                # for condition in rule_str_tuple:
+                for orange_rule in rule.selectors:
+                    col_idx,op,value = orange_rule[0],orange_rule[1],orange_rule[2]
+                    if col_idx not in previous_cols:
+                        if domain.attributes[col_idx].is_continuous:
+                            if op in ['<=','≤','<']:
+                                s = Condition(column=col_idx,max_value=float(value),type='continuous',possible_range=possible_range[col_idx])
+                            else:
+                                s = Condition(column=col_idx,min_value=float(value),type='continuous',possible_range=possible_range[col_idx])
+                            conditions.append(s)
+                        else:
+                            # categorical
+                            s = Condition(column=col_idx,values=[value],type='categorical')
+                            conditions.append(s)
+                        previous_cols.append(col_idx)
+                    else:
+                        s = conditions[ previous_cols.index(col_idx) ]
+                        if domain.attributes[col_idx].is_continuous:
+                            if op in ['<=','≤','<']:
+                                s_tmp = Condition(column=col_idx,max_value=float(value),type='continuous',possible_range=possible_range[col_idx])
+                            else:
+                                s_tmp = Condition(column=col_idx,min_value=float(value),type='continuous',possible_range=possible_range[col_idx])
+                            s.max = max(s.max,s_tmp.max)
+                            s.min = min(s.min,s_tmp.min)
+                        else:
+                            # categorical
+                            s.values.append(value)
+
+
+                # merge, for example, merge "1<x<2" and "2<x<3" into "1<x<3"
+                rule = Rule(conditions=conditions,domain=domain,target_class=target_class)
+                rule_set.append(rule)
+
+            return rule_set
+
+        identified_rules = Orange_rules_to_our(Best_rules,self.domain,self.target_class)
+        return identified_rules
+
+        # from utils import rule_to_string
+        # for r in identified_rules:
+        #     print(rule_to_string(r,self.domain,target_class_idx=1))
+        #
+        # quit()
+        # best_rule.create_model()
+        # return best_rule if best_rule not in existing_rules else None
+
 
     def generate_rule_space(self):
         """
@@ -528,10 +675,10 @@ class DecisionSet():
         itemsets = list(frequent_itemsets(X,supp))
         decoder_item_to_feature = { idx:(feature.name,value) for idx,feature,value in OneHot.decode(mapping,disc_data_table,mapping)}
 
-        self.rule_space = self.itemsets_to_rules(itemsets,self.domain,decoder_item_to_feature,self.target_class)
-        print("Generating rule space okay. Total number:",len(self.rule_space))
-
-        self.rule_screening()
+        # self.rule_space = self.itemsets_to_rules(itemsets,self.domain,decoder_item_to_feature,self.target_class)
+        # print("Generating rule space okay. Total number:",len(self.rule_space))
+        #
+        # self.rule_screening()
 
         # TODO: print pre-mined rules
         # for r in self.rule_space:
@@ -645,6 +792,8 @@ class DecisionSet():
         self.rule_space = [self.rule_space[i] for i in supp_select[select]]
         # self.RMatrix = np.array(Z[:,supp_select[select]])
         print ('\tTook %0.3fs to generate %d rules' % (time.time() - start_time, len(self.rule_space)) )
+
+
 
 
 

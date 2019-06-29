@@ -147,7 +147,8 @@ def explain_tabular_ILS(dataset,blackbox, target_class='yes', pre_label=True, ra
         c_star,c_prime = best_and_second_best_candidate(solutions)
 
         tmp_count = 0
-        while(c_prime.upper() > c_star.lower() +0.001 ) :
+
+        while(c_prime.upper() > c_star.lower() +0.001 ) : # in practice we set a small interval
             # print(a_prime.upper(), a_star.lower() )
             X_new = explainer.generate_synthetic_instances_for_solution(c_star,c_prime)
             solutions =  explainer.update_candidates(solutions,c_star,c_prime,X_new)

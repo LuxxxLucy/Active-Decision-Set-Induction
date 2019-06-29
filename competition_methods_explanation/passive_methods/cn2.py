@@ -8,11 +8,10 @@ import numpy as np
 # ---
 # Input Params:
 # 1. dataset: a Orange data table
-# 2. encoder: a scikit transformer
-# 3. blackbx: a blackbox predict function, such as `c.predict` where c is a scikit-classifier
+# 3. blackbx: a blackbox predict function, such as `c.predict` where c is a scikit-classifier (including the encoder.transform function!)
 # 4. target_class
 
-def cn2_tabular(dataset,encoder, blackbox, target_class = 'yes', random_seed=42):
+def cn2_tabular(dataset,blackbox, target_class = 'yes', random_seed=42):
     '''
     this is a warpper of the cn2 algorithm.
     The only changes are:
@@ -22,7 +21,7 @@ def cn2_tabular(dataset,encoder, blackbox, target_class = 'yes', random_seed=42)
     np.random.seed(random_seed)
 
     # re-labelled the data
-    labels = blackbox(encoder(dataset.X))
+    labels = blackbox(dataset.X)
     data_table = Orange.data.Table(dataset.domain, dataset.X, labels)
 
 
@@ -51,7 +50,7 @@ def cn2_tabular(dataset,encoder, blackbox, target_class = 'yes', random_seed=42)
 
     return rule_list
 
-def cn2sd_tabular(dataset,encoder, blackbox, target_class = 'yes', random_seed=42):
+def cn2sd_tabular(dataset,blackbox, target_class = 'yes', random_seed=42):
     '''
     this is a warpper of the cn2 algorithm.
     The only changes are:
@@ -61,7 +60,7 @@ def cn2sd_tabular(dataset,encoder, blackbox, target_class = 'yes', random_seed=4
     np.random.seed(random_seed)
 
     # re-labelled the data
-    labels = blackbox(encoder(dataset.X))
+    labels = blackbox(dataset.X)
     data_table = Orange.data.Table(dataset.domain, dataset.X, labels)
 
 

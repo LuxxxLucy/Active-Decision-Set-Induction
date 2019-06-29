@@ -8,7 +8,7 @@ import operator
 import Orange
 
 # import local package
-from .BDS.model import BDS
+from .BRS.model import BRS
 
 def explain_tabular(dataset, blackbox, target_class='yes', pre_label=True, random_seed=42):
     '''
@@ -28,8 +28,7 @@ def explain_tabular(dataset, blackbox, target_class='yes', pre_label=True, rando
         dataset = Orange.data.Table(dataset.domain, dataset.X, labels)
 
     # fit the explainer to the data
-    explainer = BDS(dataset, blackbox)
-    print("pre generation okay, quit")
+    explainer = BRS(dataset, blackbox)
     rule_set = explainer.fit(dataset.domain,dataset.X,dataset.Y,target_class=target_class)
 
     # convert the rule representation

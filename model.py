@@ -47,17 +47,18 @@ class ADS(DecisionSet):
         self.total_X = np.append(X, X_prime, axis=0)
         self.total_Y = np.append(Y, Y_prime, axis=0)
 
+
         return
 
     def set_parameters(self,beta):
         # self.N_iter_max = 10
-        self.N_iter_max = 1000
+        self.N_iter_max = 100
         self.N_batch = 10
         self.beta = beta
         self.epsilon = 0.01
 
 
-        self.supp = 50
+        self.supp = 0.01
         # self.supp = 1
         self.maxlen= 3
         print("target class is:",self.target_class,". Its index is",self.target_class_idx)
@@ -157,5 +158,5 @@ class ADS(DecisionSet):
         return self.best_solution
 
     def compute_accuracy(self):
-        theta = len(get_correct_cover_ruleset(self.best_solution,self.total_X,self.total_Y,target_class_idx=self.target_class_idx)) * 1.0 / len(self.data_table.X)
+        theta = len(get_correct_cover_ruleset(self.best_solution,self.total_X,self.total_Y,target_class_idx=self.target_class_idx)) * 1.0 / len(self.total_X)
         return theta

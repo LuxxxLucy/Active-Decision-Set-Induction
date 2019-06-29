@@ -19,14 +19,14 @@ from .mcts_core.tree import Tree
 from .mcts_core.core import diverse_filter_sorted
 # from utils import check
 
-def explain_tabular_no_query(dataset,encoder, blackbox, target_class = 'yes', random_seed=42, K=-1,termination_max=20):
+def explain_tabular_no_query(dataset, blackbox, target_class = 'yes', random_seed=42, K=-1,termination_max=20):
     '''
     this is a baseline where we don't actively query the black box to refine our pattern but only induce pattern from the labelled dataset.
     In fact, this is the same with pattern induction a dataset.
     '''
-    return explain_tabular(dataset,encoder, blackbox, target_class = 'yes', random_seed=42, K=-1, active=False)
+    return explain_tabular(dataset,blackbox, target_class = 'yes', random_seed=42, K=-1, active=False)
 
-def explain_tabular(dataset,encoder, blackbox, target_class = 'yes', random_seed=42, K=-1, active=True,termination_max=20):
+def explain_tabular(dataset, blackbox, target_class = 'yes', random_seed=42, K=-1, active=True,termination_max=20):
     '''
     `active` indicates
     '''
@@ -43,7 +43,7 @@ def explain_tabular(dataset,encoder, blackbox, target_class = 'yes', random_seed
     # tree = restore_tree()
 
     # MCTS search
-    tree = Tree(dataset,target_class,blackbox=blackbox,encoder=encoder,active=active)
+    tree = Tree(dataset,target_class,blackbox=blackbox,active=active)
     # let termination be a simple counter
     termination = 0
     while(True):
@@ -75,6 +75,9 @@ def explain_tabular(dataset,encoder, blackbox, target_class = 'yes', random_seed
     nodes = tree.output_all()
     nodes = diverse_filter_sorted(nodes,tree,dataset)
     patterns = [node.pattern for node in nodes]
+
+    for p in patterns:
+        p.conditions = p.selectors
 
     # return a pre-defined number of ruls or all the rules (if not specified)
     return (patterns[:K],tree) if K != -1 else (patterns,tree)

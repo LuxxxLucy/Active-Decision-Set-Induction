@@ -47,7 +47,7 @@ class Selector(namedtuple('Selector', 'column, op, value')):
         """
         return Selector.OPERATORS[self[1]](X[:, self[0]], self[2])
 
-def cn2anchor_tabular(dataset,encoder, blackbox, target_class = 'yes', random_seed=42):
+def cn2anchor_tabular(dataset, blackbox, target_class = 'yes', random_seed=42):
     '''
     this is a warpper of the cn2 algorithm where the rule finder is replaced by Anchor algorithm
     The only changes are:
@@ -56,7 +56,7 @@ def cn2anchor_tabular(dataset,encoder, blackbox, target_class = 'yes', random_se
     np.random.seed(random_seed)
 
     # re-labelled the data
-    labels = blackbox(encoder(dataset.X))
+    labels = blackbox(dataset.X)
     data_table = Orange.data.Table(dataset.domain, dataset.X, labels)
 
 
@@ -65,14 +65,14 @@ def cn2anchor_tabular(dataset,encoder, blackbox, target_class = 'yes', random_se
         Rule Hunter is the Rule Finder algorithm implemented in the Orange package.
         To use Anchor, we only needs to warp the __call__ function
         '''
-        def __init__(self,data_table,blackbox,encoder):
+        def __init__(self,data_table,blackbox):
             super().__init__()
 
             class_names = data_table.domain.class_var.values
             feature_names = [ it.name for it in data_table.domain.attributes ]
             data = data_table.X
             categorical_names = {  i: it.values for i,it in enumerate(data_table.domain.attributes) if it.is_discrete }
-            self.anchor_explainer = anchor_tabular.AnchorTabularExplainer(class_names, feature_names, data, encoder, discretizer=None, categorical_names=categorical_names)
+            self.anchor_explainer = anchor_tabular.AnchorTabularExplainer(class_names, feature_names, data, encoder=None, discretizer=None, categorical_names=categorical_names)
             self.blackbox = blackbox
 
         def __call__(self, X, Y, W, target_class, domain):
@@ -128,9 +128,10 @@ def cn2anchor_tabular(dataset,encoder, blackbox, target_class = 'yes', random_se
 
     #intializes the explainer
     class cn2anchor_explainer(_RuleLearner):
-        def __init__(self, data_table,blackbox,encoder,preprocessors=None, base_rules=None):
+        def __init__(self, data_table,blackbox,preprocessors=None, base_rules=None):
             super().__init__(preprocessors, base_rules)
-            self.rule_finder = AnchorRuleFinder(data_table,blackbox,encoder)
+            # encoder is a now only a decorator.
+            self.rule_finder = AnchorRuleFinder(data_table,blackbox)
             self.rule_finder.quality_evaluator = LaplaceAccuracyEvaluator()
 
         def find_rules(self, X, Y, W, target_class, domain):
@@ -168,7 +169,7 @@ def cn2anchor_tabular(dataset,encoder, blackbox, target_class = 'yes', random_se
 
 
     # fit the explainer to the data
-    explainer = cn2anchor_explainer(data_table,blackbox, encoder)
+    explainer = cn2anchor_explainer(data_table,blackbox)
     rule_list = explainer.fit(data_table.X,data_table.Y,data_table.domain,target_class=target_class)
 
     return rule_list

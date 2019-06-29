@@ -9,7 +9,8 @@ For reproducibility and open science, competition methods (baselines) are re-imp
 
 ## Requirements
 I assume you use anaconda.
-* `python3`: all the code and scripts should work on python-3.5. And by a large chance, it would run all fine in python 3.6 and above.
+* `python3.6.3
+`: all the code and scripts should work on python-3.5. And by a large chance, it would run all fine in python 3.6 and above.
 * `scipy`, `numpy`, `scikit-learn>= v0.20`: the packages you should have.
 * `Orange`: (I hate pandas!) The Orange package has a good representation of data, especially the `Domain` object.
 * `Orange Associate`: package for frequent itemset mining (FP-growth algorithm). `pip install Orange3-Associate`
@@ -36,13 +37,13 @@ Passive approaches:
 
 1. __Interpretable decision set__ (TODO)
 2. __BETA__ (TODO)
-3. __Bayesian decision set__ in `bds.py`: adopted from the original code. fixes some bugs and compatibility issues.
+3. __Bayesian decision set__ in `BRS.py`: adopted from the original code. fixes some bugs and compatibility issues.
 4. __Scalable Bayesian Decision List__ (TODO)
 5. __RuleMatrix__ (sampling+SBDL)
 6. __CN2__ and __CN2SD__ in `cn2.py`: the famous CN2 sequential-covering algorithm. The CN2SD is a very useful variant (CN2 for subgroup discovery).
 
 Active approaches (bottom-up)
-1. __Submodular Pick Anchor__ algorithm in `sp_anchor.py`: first generate a local explanations for every instance, and then greedily pick a good local explanation sequentially for a wide coverage of instances. The original anchor implementation is adopted, which employs a top-down search(general-to-specific search with KL-LUCB algorithm). The code from the original author is only slightly modified, about the data preprocessing. (None of the core code is modified).
+1. __Submodular Pick Anchor__ algorithm in `sp_anchor.py`: first generate a local explanations for every instance, and then greedily pick a good local explanation sequentially for a wide coverage of instances. The original anchor implementation is adopted, which employs a top-down search(general-to-specific search with KL-LUCB algorithm). The code from the original author is only slightly modified, about the data preprocessing. (None of the core code is modified). __We remove the data encoder__ in the original code since an encoder, in our view, is part of the blackbox. We assume the blackbox takes the raw data.
 1. __CN2-Anchor__ in `cn2anchor.py`: a simple improve using separate-and-conquer scheme: pick a random instance, generate an anchor, remove the covered instances, and repeat till all instances are covered. We called it CN2-Anchor algorithm. It differs from the above Submodular pick on how to select the explanation: it does pick the best but only randomly. It takes much less time since generating a local explanation is not cheap and it does not have to compute every anchor. But the performance typically is not that different.
 
 Active approaches (top-down):

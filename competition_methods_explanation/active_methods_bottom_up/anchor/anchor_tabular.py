@@ -32,11 +32,10 @@ class AnchorTabularExplainer(object):
     """
     def __init__(self, class_names, feature_names, data=None, encoder=None, discretizer=None,
                  categorical_names=None, ordinal_features=[]):
-        # self.encoder = collections.namedtuple('random_name', ['transform'])(lambda x: x)
-        if encoder:
-            self.encoder = encoder
-        else:
-            raise ValueError("must have a encoder")
+
+        # we do not use a encoder since the encoder is implicitly implemented in the blackbox
+        self.encoder = lambda x: x
+        # self.encoder =
 
         self.categorical_features = []
         if categorical_names:

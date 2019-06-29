@@ -23,9 +23,10 @@ SMALL_THRESHOLD = 0.01
 # positive infinity
 HUGE_NUMBER = 10000
 # the minimum volume of a space
-SMALL_SPACE =  10e-8
+# SMALL_SPACE =  10e-5
+SMALL_SPACE =  0.01
 # minimum support of real instances for a pattern
-MIN_SUPPORT =1
+MIN_SUPPORT = 1
 
 
 class Selector():
@@ -80,7 +81,9 @@ class Selector():
         """
 
         if self.type == 'categorical':
-            return Selector.OPERATORS['in'](X[:,self.column], self.values)
+            return np.logical_or.reduce(
+            [np.equal(X[:,self.column], v) for v in self.values ]
+            )
         elif self.type == 'continuous':
             return np.logical_and(
             Selector.OPERATORS['<='](X[:,self.column], self.max),
@@ -124,6 +127,7 @@ def diverse_filter_sorted(nodes,tree,dataset):
     # TODO: replce simple implementation
     # nodes = sorted(nodes, key=lambda x: x.compute_space_coverage(),reverse=True)
     nodes = sorted(nodes, key=lambda x: x.q_value,reverse=True)
+    nodes = [n for n in nodes if n.target_class == tree.root_node.target_class and n.precision>=0.5]
     return nodes
 
 def compute_coverage(this_selectors,base_selectors):
@@ -292,8 +296,8 @@ class Node:
         # information about current_node
         self.domain = domain
         self.target_class = target_class
-        target_class_idx = domain.class_var.values.index(target_class)
-        self.pattern = Pattern(selectors=selectors, target_class_idx=target_class_idx)
+        self.target_class_idx = domain.class_var.values.index(target_class)
+        self.pattern = Pattern(selectors=selectors, target_class_idx=self.target_class_idx)
         self.base_selectors = base_selectors
         if base_selectors == None:
             raise Exception('error! base_selectors wrong!')
@@ -332,7 +336,7 @@ class Node:
         return self.children == []
 
     def is_satisfied(self):
-        return self.precision >= 1- THRESHOLD
+        return self.precision >= 1 - THRESHOLD
 
     def is_hopeless(self):
         # TODO: rethink here, is min_support is necessary
@@ -353,10 +357,12 @@ class Node:
 
     def is_significant(self):
         return np.sum(self.real_instances.Y == 1 ) >= MIN_SUPPORT and self.space_coverage >= SMALL_SPACE
+
     def split_or_not(self):
         # TODO: change split or not
-        # return is_satisfied() or is_hopeless()
-        return True
+        # return not ( self.is_satisfied() or self.is_hopeless() )
+        # return True
+        return not self.is_finished()
 
     def compute_q(self):
         '''
@@ -376,7 +382,10 @@ class Node:
 
         self.true_positive = np.sum(target_covered_instances) # true_positive means the number of instancs that covered by the pattern and is also in the target class labeled by the blackbox
         self.positive = np.sum(covered_instances) # positive means the number of instances that are covered by this pattern
-        self.precision = self.true_positive / self.positive
+        if self.positive !=0:
+            self.precision = self.true_positive / self.positive
+        else:
+            self.precision = 0
         self.space_coverage = self.compute_space_coverage()
 
         return self.precision * self.space_coverage
@@ -412,7 +421,6 @@ class Node:
         return space_coverage
 
     def split(self):
-
         return self.split_gini_index()
         # return self.split_info_gain()
 
@@ -640,7 +648,6 @@ class Node:
         raw_X_columns = [ s.sample(batch_size=batch_size) for s in tmp_selectors]
         raw_X = np.column_stack(raw_X_columns)
         return raw_X
-
 
     def __str__(self):
         return self.pattern.string_representation(self.domain)

@@ -4,7 +4,7 @@ from .core import Selector, Pattern, Node
 from Orange.data import Table, Domain
 
 # base batch size, number of new query to the blackbox at each roll_out_estimate phase
-BASE_BATCH_SIZE = 100
+BASE_BATCH_SIZE = 10
 
 from pprint import pprint as pr
 
@@ -18,17 +18,16 @@ def UCB1():
 
 class Tree:
 
-    def __init__(self,dataset,target_class,blackbox=None,encoder=None,active=True):
+    def __init__(self,dataset,target_class,blackbox=None,active=True):
         '''
-        1. keep memory of some key objects:domain, blackbox, encoder
+        1. keep memory of some key objects:domain, blackbox
         2. build the root node
         '''
 
         self.domain = dataset.domain # keep record of the data domain
-        if blackbox == None or encoder == None:
-            raise Exception('critical error!:blackbox and encoder must not be None')
+        if blackbox == None:
+            raise Exception('critical error!:blackbox must not be None')
         self.blackbox = blackbox # the sci-kit like object's `predict` function
-        self.encoder = encoder # the encoder from raw data to format that the blackbox takes in
 
         self.active = active # indicate active query or not
 
@@ -43,6 +42,8 @@ class Tree:
         root_node = Node(self.domain,target_class, selectors=initial_selectors, parent=None, real_instances=dataset,base_selectors=initial_selectors)
         # print(root_node.pattern.target_class_idx)
         self.root_node = root_node
+
+        self.synthetic_data_table = Table.from_domain(domain=self.domain,n_rows=0) # synthetic data (now empty)
         return
 
     def select_best_node(self,criteria=UCB1()):
@@ -101,11 +102,13 @@ class Tree:
         else:
             # sample a fixed size of `batch_size` sample from current pattern
             new_X = node.sample(batch_size) # uniformly sample inside a region of space (specified by the pattern)
-            new_y = self.blackbox(self.encoder(new_X)) # query the blackbox to get the label
+            new_y = self.blackbox(new_X) # query the blackbox to get the label
             new_synthetic_instances = Table.from_numpy(X=new_X,Y=new_y,domain=self.domain) # create new table of synthetic_instances
             # print('before update, q_value:{0},tp:{1},p:{2},count{3},precision{4}'.format(node.q_value,node.true_positive,node.positive,node.count,node.precision  ) )
             node.update_current(new_synthetic_instances) # recompute: q, true_positive, positive etc and also append new instances to synthetic_instances set
             # print('after update, q_value:{0},tp:{1},p:{2},count{3},precision{4}'.format(node.q_value,node.true_positive,node.positive,node.count,node.precision  ) )
+
+        self.synthetic_data_table.extend(new_synthetic_instances)
 
         self.updating(node,new_synthetic_instances)
         return
@@ -162,6 +165,7 @@ class Tree:
             if node.is_terminal():
                 if node.is_satisfied():
                     # result.append(node.pattern)
+
                     result.append(node)
                 return result
 
