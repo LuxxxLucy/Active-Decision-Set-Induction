@@ -46,7 +46,7 @@ class BRS(object):
         Niteration = 500  # number of iterations in each chain
         Nchain = 2         # number of chains in the simulated annealing search algorithm
 
-        supp = 0.5           # 5% is a generally good number. The higher this supp, the 'larger' a pattern is
+        supp = 0.05           # 5% is a generally good number. The higher this supp, the 'larger' a pattern is
         maxlen = 3         # maxmum length of a pattern
 
         # \rho = alpha/(alpha+beta). Make sure \rho is close to one when choosing alpha and beta.
@@ -184,7 +184,6 @@ class BRS(object):
             rules_curr_norm = self.normalize(rules_curr)
             pt_curr = -100000000000
             maps[chain].append([-1,[pt_curr/3,pt_curr/3,pt_curr/3],rules_curr,[self.rules[i] for i in rules_curr]])
-
             for iter in range(Niteration):
                 if iter>=split:
                     p = np.array(range(1+len(maps[chain])))

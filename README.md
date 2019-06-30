@@ -61,12 +61,14 @@ There are hyper-parameters for this algorithm:
 * `sanity-check-dataset-loading-and-one-instance-explanation.ipynb`: a sanity check
 * `2d-experiment.ipynb`: experiments on 2d sinusoidal data and visualization.
 
-
 ## Structure of Code
-
 
 ## Utilities for inspection
 
 1. How to inspect the pattern of a node?
 
 2. How to inspect some variables of a node? Use
+
+## More on implementation limitation
+
+* the implementation of k-nearest neighbor...

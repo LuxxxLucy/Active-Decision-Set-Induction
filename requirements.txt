@@ -1,0 +1,7 @@
+scipy
+numpy
+scikit-learn>= v0.20
+Orange
+Orange3-Associate
+lime
+spacy

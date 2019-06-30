@@ -55,6 +55,7 @@ def prepare_german_dataset(filename, path_data):
 
 def prepare_adult_dataset(filename, path_data):
 
+    np.random.seed(42)
     # Read Dataset
     df = pd.read_csv(path_data + filename, delimiter=',', skipinitialspace=True)
 
@@ -67,45 +68,16 @@ def prepare_adult_dataset(filename, path_data):
         if '?' in df[col].unique():
             df[col][df[col] == '?'] = df[col].value_counts().index[0]
 
-    # Features Categorization
-    columns = df.columns.tolist()
-    columns = columns[-1:] + columns[:-1]
-    df = df[columns]
-    class_name = 'class'
-    possible_outcomes = list(df[class_name].unique())
+    # Read Dataset
 
-    type_features, features_type = recognize_features_type(df, class_name)
+    replace_str_function = lambda x : x.replace("_","~")
+    df = df.rename(replace_str_function,axis='columns')
 
-    discrete, continuous = set_discrete_continuous(columns, type_features, class_name, discrete=None, continuous=None)
+    from utils import data_table_from_dataframe
 
-    columns_tmp = list(columns)
-    columns_tmp.remove(class_name)
-    idx_features = {i: col for i, col in enumerate(columns_tmp)}
+    data_table = data_table_from_dataframe(df,Y_column_idx=-1)
 
-    # Dataset Preparation for Scikit Alorithms
-    df_le, label_encoder = label_encode(df, discrete)
-    X = df_le.loc[:, df_le.columns != class_name].values
-    y = df_le[class_name].values
-
-    feature_values = calculate_feature_values(X, columns, class_name, discrete, continuous, discrete_use_probabilities=False, continuous_function_estimation=False)
-    dataset = {
-        'name': filename.replace('.csv', ''),
-        'df': df,
-        'columns': list(columns),
-        'class_name': class_name,
-        'possible_outcomes': possible_outcomes,
-        'type_features': type_features,
-        'features_type': features_type,
-        'feature_values': feature_values,
-        'discrete': discrete,
-        'continuous': continuous,
-        'idx_features': idx_features,
-        'label_encoder': label_encoder,
-        'X': X,
-        'y': y,
-    }
-
-    return dataset
+    return data_table
 
 
 def prepare_compass_dataset(filename, path_data):

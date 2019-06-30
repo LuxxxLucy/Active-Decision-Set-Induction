@@ -6,6 +6,28 @@ def ruleset_predict(ruleset,X):
         curr_covered_or_not |= r.evaluate_data(X)
     return curr_covered_or_not
 
+def bds_ruleset_predict(ruleset,X,domain):
+
+    curr_covered_or_not = np.zeros(X.shape[0], dtype=np.bool)
+    for r in ruleset:
+
+        curr_covered = np.ones(X.shape[0], dtype=bool)
+        for condition in r.selectors:
+            if condition.type == 'categorical':
+                tmp = np.logical_or.reduce(
+                [np.equal(X[:,condition.column], domain.attributes[condition.column].values.index(v)  ) for v in condition.values ]
+                )
+            elif condition.type == 'continuous':
+                tmp = np.logical_and(
+                operator.lt(X[:,condition.column], condition.max),
+                operator.gt(X[:,condition.column], condition.min)
+                )
+
+            curr_covered &= tmp
+
+        curr_covered_or_not |=  curr_covered
+    return curr_covered_or_not
+
 def data_table_from_dataframe(dataframe,Y_column_idx=0):
     import numpy as np
     from Orange.data import Table, Domain, ContinuousVariable, DiscreteVariable
@@ -49,7 +71,8 @@ def data_table_from_dataframe(dataframe,Y_column_idx=0):
         Y = np.array(Y)
 
         return Table(domain, X,Y)
-
+    if Y_column_idx < 0:
+        Y_column_idx = len(dataframe.columns) + Y_column_idx
     data_table = df2table(dataframe)
 
     return data_table,dataframe
