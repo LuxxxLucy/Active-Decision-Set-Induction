@@ -12,6 +12,7 @@ import numpy as np
 import random
 from copy import deepcopy
 import re
+from sklearn.metrics.pairwise import euclidean_distances as distance_function
 
 import Orange
 from Orange.data import Table
@@ -99,6 +100,16 @@ class Condition():
         else:
             raise Exception('critical error: unknown selector type {}'.format(self.type))
             return
+
+    def __hash__(self):
+        if self.type == 'categorical':
+            return hash((self.type, self.column ,tuple(self.values)) )
+        elif self.type == 'continuous':
+            return hash((self.type,self.column, self.min,self.max) )
+        else:
+            raise Exception('critical error: unknown selector type {}'.format(self.type))
+            return
+        return hash(tuple(l))
 
     def __sub__(self,other):
         if self.column != other.column:
@@ -290,6 +301,12 @@ class Rule:
     def __len__(self):
         return len(self.conditions)
 
+    def __hash__(self):
+        self.conditions = sorted(self.conditions,key=lambda x:x.column)
+
+        l = [ hash(c) for c in self.conditions ]
+        return hash(tuple(l))
+
     def get_length(self):
         return len(self.conditions)
 
@@ -356,14 +373,18 @@ class DecisionSet():
         self.target_class_idx = self.data_table.domain.class_var.values.index(self.target_class)
         return
 
-    def generate_action(self,X,Y,beta=1000,knn=None,transformer=None):
-        incorrect_instances = get_incorrect_cover_ruleset(self.current_solution,self.data_table.X,self.data_table.Y,target_class_idx=self.target_class_idx)
-        recall = get_recall(self.current_solution,self.data_table.X,self.data_table.Y,target_class_idx=self.target_class_idx)
+    def generate_action(self,X,Y,beta=1000,rho=None,transformer=None):
+        # incorrect_instances = get_incorrect_cover_ruleset(self.current_solution,self.data_table.X,self.data_table.Y,target_class_idx=self.target_class_idx)
+        incorrect_instances = get_incorrect_cover_ruleset(self.current_solution,self.total_X,self.total_Y,target_class_idx=self.target_class_idx)
+        # recall = get_recall(self.current_solution,self.total_X,self.total_Y,target_class_idx=self.target_class_idx)
         if len(incorrect_instances) != 0:
             anchor_instance = random.choice(incorrect_instances)
             N = len(self.current_solution)
             t = random.random()
-            if self.data_table.Y[anchor_instance]== self.target_class_idx or N<1:
+            anchor_instance_y = self.total_Y[anchor_instance]
+            anchor_instance_x = self.total_X[anchor_instance]
+            # if self.data_table.Y[anchor_instance]== self.target_class_idx or N<1:
+            if anchor_instance_y == self.target_class_idx or N<1:
                 if t< 1/3 or N <1:
                     mode = 'ADD_RULE'       # action: add rule
                 elif t < 2/3 :
@@ -392,15 +413,17 @@ class DecisionSet():
 
                     if candidate_rule_to_add in self.current_solution:
                         continue
-                    if candidate_rule_to_add.evaluate_instance(self.data_table.X[anchor_instance]) == True:
-                        action = Action(self.current_solution,('ADD_RULE',candidate_rule_to_add),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,knn=knn,transformer=transformer)
-                        actions.append(action)
-                    else:
-                        continue
+                    # if candidate_rule_to_add.evaluate_instance(self.data_table.X[anchor_instance]) == True:
+                    #     action = Action(self.current_solution,('ADD_RULE',candidate_rule_to_add),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,rho=self.rho,transformer=transformer)
+                    #     actions.append(action)
+                    # else:
+                    #     continue
+                    action = Action(self.current_solution,('ADD_RULE',candidate_rule_to_add),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,lambda_parameter=self.lambda_parameter,rho=rho,transformer=transformer)
+                    actions.append(action)
 
         elif mode == 'REMOVE_RULE':
             for candidate_rule_to_remove in self.current_solution:
-                action = Action(self.current_solution,('REMOVE_RULE',candidate_rule_to_remove),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,knn=knn,transformer=transformer)
+                action = Action(self.current_solution,('REMOVE_RULE',candidate_rule_to_remove),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,lambda_parameter=self.lambda_parameter,rho=rho,transformer=transformer)
                 actions.append(action)
         elif mode == 'REMOVE_CONDITION':
             for rule_idx,rule in enumerate(self.current_solution):
@@ -410,9 +433,9 @@ class DecisionSet():
                     rule.compute_volume(self.domain)
                     if len(rule_new.conditions) == 0:
                         # which means there is only one condition in this rule, remove this condition means to remove the entire rule
-                        action = Action(self.current_solution,('REMOVE_RULE',rule),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,knn=knn,transformer=transformer)
+                        action = Action(self.current_solution,('REMOVE_RULE',rule),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,lambda_parameter=self.lambda_parameter,rho=rho,transformer=transformer)
                     else:
-                        action = Action(self.current_solution,('REMOVE_CONDITION',rule,rule_new),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,knn=knn,transformer=transformer)
+                        action = Action(self.current_solution,('REMOVE_CONDITION',rule,rule_new),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,lambda_parameter=self.lambda_parameter,rho=rho,transformer=transformer)
                     actions.append(action)
         elif mode == 'ADD_CONDITION':
             for rule_idx,rule in enumerate(self.current_solution):
@@ -425,7 +448,7 @@ class DecisionSet():
                             rule_new = deepcopy(rule)
                             rule_new.add_condition(rule_idx,attribute_idx,possible_value_idx,self.domain)
                             rule_new.compute_volume(self.domain)
-                            action = Action(self.current_solution,('ADD_CONDITION',rule,rule_new),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,knn=knn,transformer=transformer)
+                            action = Action(self.current_solution,('ADD_CONDITION',rule,rule_new),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,lambda_parameter=self.lambda_parameter,rho=rho,transformer=transformer)
                             actions.append(action)
                     elif attribute.is_continuous:
                         # we use the discretized bin for continuous.
@@ -442,19 +465,19 @@ class DecisionSet():
                         for possible_value in self.disc_data_table.domain.attributes[attribute_idx].values:
                             rule_new = deepcopy(rule)
                             rule_new.add_condition(rule_idx,attribute_idx,possible_value,self.domain)
-                            action = Action(self.current_solution,('ADD_CONDITION',rule,rule_new),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,knn=knn,transformer=transformer)
+                            action = Action(self.current_solution,('ADD_CONDITION',rule,rule_new),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,lambda_parameter=self.lambda_parameter,rho=rho,transformer=transformer)
                             actions.append(action)
         elif mode == 'EXPAND_CONDITION':
             # try:
             for rule in self.current_solution:
                 for condition_idx,condition in enumerate(rule.conditions):
-                    if condition.filter_instance(self.data_table.X[anchor_instance]) == True:
+                    if condition.filter_instance(anchor_instance_x) == True:
                         # then we do not have to modify this condition
                         continue
                     rule_new = deepcopy(rule)
-                    if rule_new.conditions[condition_idx].modify_to_cover(self.data_table.X[anchor_instance],self.domain) == True:
+                    if rule_new.conditions[condition_idx].modify_to_cover(anchor_instance_x,self.domain) == True:
                         rule_new.compute_volume(self.domain)
-                        action = Action(self.current_solution,('EXPAND_CONDITION',rule,rule_new),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,knn=knn,transformer=transformer)
+                        action = Action(self.current_solution,('EXPAND_CONDITION',rule,rule_new),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,lambda_parameter=self.lambda_parameter,rho=rho,transformer=transformer)
                         actions.append(action)
                     else:
                         continue
@@ -462,9 +485,9 @@ class DecisionSet():
             for rule in self.current_solution:
                 for condition_idx,condition in enumerate(rule.conditions):
                     rule_new = deepcopy(rule)
-                    if rule_new.conditions[condition_idx].modify_to_not_cover(self.data_table.X[anchor_instance],self.domain) == True:
+                    if rule_new.conditions[condition_idx].modify_to_not_cover(anchor_instance_x,self.domain) == True:
                         rule_new.compute_volume(self.domain)
-                        action = Action(self.current_solution,('SPECIFY_CONDITION',rule,rule_new),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,knn=knn,transformer=transformer)
+                        action = Action(self.current_solution,('SPECIFY_CONDITION',rule,rule_new),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,lambda_parameter=self.lambda_parameter,rho=rho,transformer=transformer)
                         actions.append(action)
                     else:
                         continue
@@ -604,6 +627,7 @@ class DecisionSet():
             return rule_set
 
         identified_rules = Orange_rules_to_our(Best_rules,self.domain,self.target_class)
+        identified_rules = list(set(identified_rules))
         return identified_rules
 
 
@@ -742,7 +766,7 @@ class DecisionSet():
 
 class Action():
 
-    def __init__(self,current_solution,modification,X,Y,domain,current_obj,beta,target_class_idx=1,knn=None,transformer=None):
+    def __init__(self,current_solution,modification,X,Y,domain,current_obj,beta,lambda_parameter=0.01,target_class_idx=1,rho=None,transformer=None):
         mode = modification[0]
         self.mode = mode
         self.current_solution = current_solution
@@ -765,9 +789,18 @@ class Action():
         else:
             raise ValueError("do not know this action mode:<",mode,">. Please check, or this mode is not implemented")
 
-        self.beta=beta
+        if self.mode in ['ADD_RULE','ADD_CONDITION','REMOVE_CONDITION','EXPAND_CONDITION','SPECIFY_CONDITION']:
+            self.changed_rule = self.new_solution[-1]
+        else:
+            self.changed_rule = self.current_solution[self.remove_rule_idx]
 
-        self.update_objective(X,Y,domain,target_class_idx=target_class_idx,knn=knn,transformer=transformer)
+        self.total_volume = self.changed_rule.compute_volume(domain)
+
+        self.beta = beta
+        self.lambda_parameter = lambda_parameter
+        self.rho = rho
+
+        self.update_objective(X,Y,domain,target_class_idx=target_class_idx,transformer=transformer)
         # TODO: select a good way to define confidence interval
 
     def make_hopeless(self):
@@ -777,33 +810,42 @@ class Action():
     def obj_estimation(self):
         return self.empirical_obj
 
-    def update_objective(self,X,Y,domain,target_class_idx=1,knn=None,transformer=None):
+    def update_objective(self,X,Y,domain,target_class_idx=1,transformer=None):
         '''
         update objective. and update the confidence interval
         '''
-        self.empirical_obj = simple_objective(self.new_solution,X,Y,target_class_idx=target_class_idx)
+        self.empirical_obj = simple_objective(self.new_solution,X,Y,lambda_parameter=self.lambda_parameter,target_class_idx=target_class_idx)
 
         if self.beta == 0:
             self.beta_interval=0
             return
 
         curr_covered_or_not = np.zeros(X.shape[0], dtype=np.bool)
-        for r in self.new_solution:
-            curr_covered_or_not |= r.evaluate_data(X)
+        # for r in self.new_solution:
+        #     curr_covered_or_not |= r.evaluate_data(X)
+        curr_covered_or_not |= self.changed_rule.evaluate_data(X)
         num = np.sum(curr_covered_or_not)
 
         # self.total_volume = sum([ r.compute_volume(domain) for r in self.new_solution ])
 
-        if self.mode in ['ADD_RULE','ADD_CONDITION','REMOVE_CONDITION','EXPAND_CONDITION','SPECIFY_CONDITION']:
-            changed_rule = self.new_solution[-1]
-        else:
-            changed_rule = self.current_solution[self.remove_rule_idx]
-
-        self.total_volume = changed_rule.compute_volume(domain)
+        covered_indices =   np.where(curr_covered_or_not == True)[0]
         if num == 0:
-            self.beta_interval = 0
+            # if there is no samples in this rule, by no doubt it has a large uncertainty.
+            self.beta_interval = 1
         else:
-            self.beta_interval = 0.001 * (self.beta * self.total_volume) / num
+            X_transformed = transformer(X[covered_indices])
+            tmp = distance_function(X_transformed, X_transformed)
+            identity_matrix = np.identity(tmp.shape[0])
+            average_nearest_distance = tmp + identity_matrix*10000
+            average_nearest_distance = np.amin(average_nearest_distance, axis=1)
+            rule_average_nearest_distance = np.average(average_nearest_distance)
+            # self.beta_interval =  self.beta * ( X.shape[0] / 1 * total_average_nearest_distance ) / ( covered_indices.shape[0] / self.total_volume * rule_average_nearest_distance  )
+            if self.total_volume == 0:
+                self.make_hopeless()
+                return
+            # this_rho = ( num / self.total_volume / ( rule_average_nearest_distance + 1e-10 )  ) + 1e-10
+            this_rho = ( num / self.total_volume  ) + 1e-10
+            self.beta_interval =  0.001 * math.sqrt ( self.beta *  self.rho / this_rho)
 
         return
 

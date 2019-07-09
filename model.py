@@ -4,8 +4,10 @@ import Orange
 from sklearn.neighbors import KDTree
 from sklearn.compose import make_column_transformer
 from sklearn.preprocessing import StandardScaler, OneHotEncoder,Normalizer
+from sklearn.metrics.pairwise import euclidean_distances as distance_function
 
 # import standard programming-purpose package
+import math
 import time
 from copy import deepcopy
 import random
@@ -66,19 +68,25 @@ class ADS(DecisionSet):
         X_prime,Y_prime = self.synthetic_data_table.X,self.synthetic_data_table.Y
         self.total_X = np.append(X, X_prime, axis=0)
         self.total_Y = np.append(Y, Y_prime, axis=0)
-        self.knn = KDTree(self.transformer(self.total_X),metric='euclidean')
+        start_time = time.time()
+        # end_time = time.time()
+        # self.knn = KDTree(self.transformer(self.total_X),metric='euclidean')
+        # print ('\tTook %0.3fs to generate the KDtree' % (time.time() - start_time ) )
         return
 
-    def set_parameters(self,beta):
-        # self.N_iter_max = 10
+    def set_parameters(self,beta,lambda_parameter):
         self.N_iter_max = 1000
-        self.N_batch = 10
+        # self.N_iter_max = 100
+        self.lambda_parameter = lambda_parameter
         self.beta = beta
+
+        self.T_0 = 1000
+        self.N_batch = 10
         self.epsilon = 0.01
         self.supp = 0.01
         # self.supp = 1
         self.maxlen= 3
-        print("target class is:",self.target_class,". Its index is",self.target_class_idx)
+        # print("target class is:",self.target_class,". Its index is",self.target_class_idx)
         # TODO: add hyperparameter print
         return
 
@@ -87,11 +95,29 @@ class ADS(DecisionSet):
         # self.current_solution = random.sample(self.rule_space,3)
         self.current_solution = []
         self.current_obj = simple_objective(self.current_solution,self.data_table.X,self.data_table.Y,target_class_idx=self.target_class_idx)
-        print("initial obj: ",self.current_obj)
+        # print("initial obj: ",self.current_obj)
         self.best_obj = self.current_obj
         self.best_solution = self.current_solution
         if hasattr(self,'rule_space'):
             delattr(self, 'rule_space')
+
+
+        # print(" compute initial rho")
+        knn = KDTree(self.transformer(self.data_table.X),metric='euclidean')
+        # X_transformed = self.transformer(self.data_table.X)
+        # tmp = distance_function(X_transformed, X_transformed)
+        # identity_matrix = np.identity(tmp.shape[0])
+        # average_nearest_distance = tmp + identity_matrix
+        # average_nearest_distance = np.amin(average_nearest_distance, axis=1)
+
+        K=30
+        distances,indices = knn.query(self.transformer(self.data_table.X), k=K)
+        distances = [ d[1] for d in distances]
+        average_nearest_distance = np.average(distances)
+        # self.rho = (self.data_table.X.shape[0] / 1 / average_nearest_distance)
+        self.rho = (self.data_table.X.shape[0] / 1 )
+        # print(" compute initial rho")
+
 
     def termination_condition(self):
         if self.termination == True:
@@ -102,6 +128,7 @@ class ADS(DecisionSet):
             return False
 
     def update_best_solution(self,best_action):
+        self.best_obj = simple_objective(self.best_solution,self.total_X,self.total_Y,target_class_idx=self.target_class_idx)
         if self.best_obj < best_action.obj_estimation():
             self.best_obj = best_action.obj_estimation()
             self.best_solution = best_action.new_solution
@@ -115,27 +142,42 @@ class ADS(DecisionSet):
 
         if t < 0.001:
             '''re-start'''
-            print("re-staring!!!!!!!!!!!!")
+            # print("re-staring!!!!!!!!!!!!")
             self.current_solution = []
             self.current_obj = simple_objective(self.current_solution,self.data_table.X,self.data_table.Y,target_class_idx=self.target_class_idx)
             if hasattr(self,'rule_space'):
                 delattr(self, 'rule_space')
+            return
         elif t < self.epsilon:
             a = random.choice(actions)
-            self.current_solution = a.new_solution
-
         else:
             a = best_action
-            self.current_solution = a.new_solution
+
+        # T = self.T_0**(1 - self.count/self.N_iter_max)
+        # prob = min(1, np.exp( (a.obj_estimation()- self.current_obj) / T)  )
+        # print(prob)
+        # if np.random.random() <= prob:
+        #     self.current_solution = a.new_solution
+        self.current_solution = a.new_solution
         return
 
     def generate_action_space(self):
-        actions = self.generate_action(self.total_X,self.total_Y,beta=self.beta,knn=self.knn,transformer=self.transformer)
+        actions = self.generate_action(self.total_X,self.total_Y,beta=self.beta,rho=self.rho,transformer=self.transformer)
+
+        # print(len(actions))
+        # from utils import rule_to_string
+        # for a in actions:
+        #     for r in a.new_solution:
+        #         print(rule_to_string(r,domain=dataset.domain,target_class_idx=1))
+        #     print("---")
+        #
+        # quit()
+
         return actions
 
     def generate_synthetic_instances(self,a_star,a_prime):
         region_1,region_2 = get_symmetric_difference(a_star,a_prime,self.domain)
-        X_new,Y_new = sample_new_instances(region_1,region_2,self.total_X,self.total_Y,self.domain,self.blackbox,knn=self.knn,transformer=self.transformer)
+        X_new,Y_new = sample_new_instances(region_1,region_2,self.total_X,self.total_Y,self.domain,self.blackbox,transformer=self.transformer)
         return X_new,Y_new
 
     def generate_synthetic_instances_for_solution(self,sol_1,sol_2):
@@ -150,10 +192,12 @@ class ADS(DecisionSet):
         self.total_X = np.append(self.total_X, XY_new.X, axis=0)
         self.total_Y = np.append(self.total_Y, XY_new.Y, axis=0)
 
-        self.knn = KDTree(self.transformer(self.total_X),metric='euclidean')
+        start_time = time.time()
+        # end_time = time.time()
+        # print ('\tTook %0.3fs to generate the KDtree' % (time.time() - start_time ) )
 
         for a in actions:
-            a.update_objective(self.total_X,self.total_Y,self.domain,target_class_idx=self.target_class_idx,knn = self.knn,transformer=self.transformer)
+            a.update_objective(self.total_X,self.total_Y,self.domain,target_class_idx=self.target_class_idx,transformer=self.transformer)
         return actions
 
     def update_candidates(self,solutions,c_star,c_prime,X_new):

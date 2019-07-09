@@ -4,63 +4,82 @@ import heapq
 import math
 import random
 from copy import deepcopy
+import time
 # import local function
 # from objective import objective
 
-# from sklearn.neighbors import KDTree
+from sklearn.neighbors import KDTree
 import sklearn
 from sklearn.metrics.pairwise import euclidean_distances as distance_function
 
-def simple_objective(solution,X,Y,parameter=0.01,target_class_idx=1):
+from sklearn.gaussian_process import GaussianProcessRegressor
+
+def simple_objective(solution,X,Y,lambda_parameter=0.01,target_class_idx=1):
     curr_covered_or_not = np.zeros(X.shape[0], dtype=np.bool)
 
     for r in solution:
         curr_covered_or_not |= r.evaluate_data(X)
 
     corret_or_not = np.equal(Y,target_class_idx)
-    # theta = sklearn.metrics.accuracy_score(corret_or_not,curr_covered_or_not)
-    positive_indices = np.where(Y == target_class_idx)[0]
-    covered_indices = np.where(curr_covered_or_not == True)[0]
-    not_covered_indices = np.where(curr_covered_or_not != True)[0]
-
-    if covered_indices.shape[0] != 0:
-        term_1 = np.intersect1d(positive_indices,covered_indices ).shape[0] / covered_indices.shape[0]
-    else:
-        term_1 = 0
-    if not_covered_indices.shape[0] != 0:
-        term_2 = np.intersect1d(positive_indices,not_covered_indices ).shape[0] / not_covered_indices.shape[0]
-    else:
-        term_2 = 0
-
-    theta =  term_1 - term_2
-    return theta - parameter * len(solution)
+    theta = sklearn.metrics.accuracy_score(corret_or_not,curr_covered_or_not)
+    # positive_indices = np.where(Y == target_class_idx)[0]
+    # covered_indices = np.where(curr_covered_or_not == True)[0]
+    # not_covered_indices = np.where(curr_covered_or_not != True)[0]
+    #
+    # if covered_indices.shape[0] != 0:
+    #     term_1 = np.intersect1d(positive_indices,covered_indices ).shape[0] / covered_indices.shape[0]
+    # else:
+    #     term_1 = 0
+    # if not_covered_indices.shape[0] != 0:
+    #     term_2 = np.intersect1d(positive_indices,not_covered_indices ).shape[0] / not_covered_indices.shape[0]
+    # else:
+    #     term_2 = 0
+    #
+    # theta =  term_1 - term_2
+    return theta - lambda_parameter * len(solution)
 
 def sampling_criteria(x,neighbours,neighbors_distances,X,Y):
     '''
     simple version is only distance
     '''
+    # y_estimated = sum([  (1/dist) * 2 * ( Y[idx] -0.5)  for idx,dist in zip(neighbours,neighbors_distances) ]) / sum([1/dist for dist in neighbors_distances])
 
-    y_estimated = sum([  (1/dist) * Y[idx] for idx,dist in zip(neighbours,neighbors_distances) ]) / sum([1/dist for dist in neighbors_distances])
     distance_to_nearest_neighnour = min(neighbors_distances)
-    # s = neighbors_distances[0] + (y_estimated - 0.5 )
-    s = 1*distance_to_nearest_neighnour - abs( y_estimated - 0.5 )
-    # s = 10*distance_to_nearest_neighnour
+    s = distance_to_nearest_neighnour
+    # try:
+    #     y_variance = 1 / (1+math.exp(distance_ratio))
+    # except:
+    #     print(neighbors_distances)
+    #     print(average_nearest_distance)
+    #     print(distance_ratio)
+    #     quit()
+
+
+    # X = [X[idx] for idx in neighbours]
+    # X = transformer(np.asarray(X))
+    # y = [Y[idx] for idx in neighbours]
+    # # start_time = time.time()
+    # gpr = GaussianProcessRegressor(random_state=42).fit(X,y)
+    # # print ('\tTook %0.3fs to generate the local gpr' % (time.time() - start_time ) )
+    #
+    # predition = gpr.predict( transformer(np.asarray([x])),return_std=True )
+    # mean,variance = predition
+    # y_estimated = mean[0]
+    # y_variance = variance[0]
+
+    # s = 0.000001*y_variance - abs( y_estimated - 0.5 )
+    # s =  - abs( y_estimated - 0.5 )
+    # s = 1.96*y_variance  - abs( y_estimated )
+
+
+    # s = distance_to_nearest_neighnour
+    # s = - abs( y_estimated - 0.5 )
+    # s = np.random.random()
+    # s = 10*distance_to_nearest_neighnour - abs( y_estimated - 0.5 )
+    # s = 1.96*distance_to_nearest_neighnour - abs( y_estimated - 0.5 )
+    # s = 0.01*distance_to_nearest_neighnour - abs( y_estimated - 0.5 )
     # s = 10*neighbors_distances[0]
     return s
-
-# def distance(x1,x2,domain):
-#     distance = 0
-#     for attri_idx,attri in enumerate(domain.attributes):
-#         if attri.is_discrete:
-#             # TODO: change categorical distance
-#             distance +=   1 / (len(attri.values)-1) if x1[attri_idx] != x2[attri_idx] else 0
-#         else:
-#             # TODO: change continuous distance
-#             x1_rescaled = (x1[attri_idx] - attri.min ) / (attri.max - attri.min)
-#             x2_rescaled = (x2[attri_idx] - attri.min ) / (attri.max - attri.min)
-#             distance += abs(x1_rescaled - x2_rescaled)
-#
-#     return distance
 
 def extend_rule(rule,domain):
     from structure import Condition
@@ -82,11 +101,11 @@ def uniform_sampling(rule_to_uniform_sample,population_size=1000):
     raw_X = np.column_stack(raw_X_columns).tolist()
     return raw_X
 
-def sample_new_instances(region_1,region_2,X,Y,domain,blackbox,batch_size=10,population_size = 1000,knn=None,transformer=None):
+def sample_new_instances(region_1,region_2,X,Y,domain,blackbox,batch_size=1,population_size = 1000,transformer=None):
 
     # TODO: now these two regions are only two rules
 
-    def sample_new_for_one_rule(rule,previous_X,previous_Y,synthetic_rows=[],synthetic_rows_y=[]):
+    def sample_new_for_one_rule(rule,previous_X,previous_Y):
         ''' the true sampling procedure
             1. we first extend the specfic region we wish to sampling
                     in order to sample, first extend the rule
@@ -97,22 +116,24 @@ def sample_new_instances(region_1,region_2,X,Y,domain,blackbox,batch_size=10,pop
         '''
         tmp_rule = extend_rule(rule,domain)
 
-        if synthetic_rows != []:
-            synthetic_rows = synthetic_rows.tolist()
-            synthetic_rows_y = synthetic_rows_y.tolist()
 
-        previous_X_copy = [x for x in previous_X ]
-        previous_Y_copy = [y for y in previous_Y ]
-        # from utils import rule_to_string
-        # print(rule_to_string(tmp_rule,domain,target_class_idx=1))
+        synthetic_rows = []
+        synthetic_rows_y = []
+
+
+        import numpy as np
+        curr_covered_or_not = np.zeros(previous_X.shape[0], dtype=np.bool)
+        curr_covered_or_not |= tmp_rule.evaluate_data(previous_X)
+        covered_indices = np.where(curr_covered_or_not == True)[0]
+
 
         population = uniform_sampling(tmp_rule,population_size=population_size)
 
-        # # todo remove visualization
+        # todo remove visualization
         # import matplotlib.pyplot as plt
         # import numpy as np
-        # # previous_X_copy = [X[i] for i in covered_indices ]
-        # # previous_Y_copy = [Y[i] for i in covered_indices]
+        # previous_X_copy = [previous_X[i] for i in covered_indices ]
+        # previous_Y_copy = [previous_Y[i] for i in covered_indices]
         # population = uniform_sampling(tmp_rule)
         # previous_X_copy = np.asarray(previous_X_copy)
         # population_np = np.asarray(population)
@@ -133,33 +154,20 @@ def sample_new_instances(region_1,region_2,X,Y,domain,blackbox,batch_size=10,pop
         # CS2 = ax.contour(xx, yy, Z, cmap=plt.cm.Blues)
         # plt.show()
 
-        previous_X_copy = [x for x in previous_X ]
-        previous_Y_copy = [y for y in previous_Y ]
+        previous_X_copy = [previous_X[i] for i in covered_indices ]
+        previous_Y_copy = [previous_Y[i] for i in covered_indices]
 
         for _ in range(batch_size):
             # compute the best idx
             # TODO: using more quick K-nearest neighbour
             # a list of pairs in the form of (index, distance to its nearest neighbour)
-            # knn = KDTree(transformer(np.asarray(previous_X_copy)),metric='euclidean')
+            knn = KDTree(transformer(np.asarray(previous_X_copy)),metric='euclidean')
+            K = min(30,covered_indices.shape[0])
             distances,indices = knn.query(transformer(population), k=K)
             distances = [ d.tolist() for d in distances]
             indices = [idx.tolist() for idx in indices ]
 
-            if len(synthetic_rows) > 0:
-                # print(len(population))
-                # print(len(population[0]))
-                population_transformed = transformer(population)
-                # print(len(synthetic_rows))
-                # print(len(synthetic_rows[0]))
-                synthetic_rows_transformed = transformer(np.asarray(synthetic_rows) )
-                # since we have new instances that is not in the kdtree. We have to compare and compute distance here
-                tmp = distance_function(population_transformed, synthetic_rows_transformed )
-                for i,x in enumerate(tmp):
-                    for count in range(len(synthetic_rows)):
-                        distances[i].append(tmp[i,count])
-                        indices[i].append(  count + len (X) -1 )
-
-            idx_to_add = max([ (i,d) for i,d in enumerate(distances)], key = lambda x: sampling_criteria(x[0],indices[x[0]], distances[x[0]],previous_X_copy,previous_Y_copy) )[0]
+            idx_to_add = max([ (i,d) for i,d in enumerate(distances)], key = lambda x: sampling_criteria(population[x[0]],indices[x[0]], distances[x[0]],previous_X_copy,previous_Y_copy) )[0]
             # TODO: change this
 
             synthetic_rows.append(population[idx_to_add])
@@ -198,11 +206,10 @@ def sample_new_instances(region_1,region_2,X,Y,domain,blackbox,batch_size=10,pop
 
         return synthetic_instances,synthetic_instances_y
 
-    K = min(5,len(X))
     new_X_1,new_Y_1 = sample_new_for_one_rule(region_1,X,Y)
     X_new = np.concatenate((new_X_1,X) )
     Y_new = np.concatenate((new_Y_1,Y) )
-    new_X_2,new_Y_2 = sample_new_for_one_rule(region_2,X_new,Y_new,new_X_1,new_Y_1)
+    new_X_2,new_Y_2 = sample_new_for_one_rule(region_2,X_new,Y_new)
     return np.concatenate((new_X_1, new_X_2)),np.concatenate((new_Y_1, new_Y_2))
 
 
