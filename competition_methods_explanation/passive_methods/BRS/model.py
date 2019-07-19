@@ -46,7 +46,7 @@ class BRS(object):
         Niteration = 500  # number of iterations in each chain
         Nchain = 2         # number of chains in the simulated annealing search algorithm
 
-        supp = 0.05           # 5% is a generally good number. The higher this supp, the 'larger' a pattern is
+        supp = 0.01           # 5% is a generally good number. The higher this supp, the 'larger' a pattern is
         maxlen = 3         # maxmum length of a pattern
 
         # \rho = alpha/(alpha+beta). Make sure \rho is close to one when choosing alpha and beta.

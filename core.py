@@ -38,13 +38,12 @@ def simple_objective(solution,X,Y,lambda_parameter=0.01,target_class_idx=1):
     # theta =  term_1 - term_2
     return theta - lambda_parameter * len(solution)
 
-def sampling_criteria(x,neighbours,neighbors_distances,X,Y):
+def sampling_criteria(distance_to_nearest_neighnour):
     '''
     simple version is only distance
     '''
     # y_estimated = sum([  (1/dist) * 2 * ( Y[idx] -0.5)  for idx,dist in zip(neighbours,neighbors_distances) ]) / sum([1/dist for dist in neighbors_distances])
 
-    distance_to_nearest_neighnour = min(neighbors_distances)
     s = distance_to_nearest_neighnour
     # try:
     #     y_variance = 1 / (1+math.exp(distance_ratio))
@@ -115,19 +114,28 @@ def sample_new_instances(region_1,region_2,X,Y,domain,blackbox,batch_size=1,popu
             2. then we sample one new synthetic at a time and we do it for `batch_size` times
         '''
         tmp_rule = extend_rule(rule,domain)
-
+        # tmp_rule = rule
 
         synthetic_rows = []
         synthetic_rows_y = []
 
+        population = uniform_sampling(tmp_rule,population_size=population_size)
 
-        import numpy as np
         curr_covered_or_not = np.zeros(previous_X.shape[0], dtype=np.bool)
         curr_covered_or_not |= tmp_rule.evaluate_data(previous_X)
         covered_indices = np.where(curr_covered_or_not == True)[0]
 
-
-        population = uniform_sampling(tmp_rule,population_size=population_size)
+        if covered_indices.shape[0] == 0:
+            '''
+            if in this rule there is no instance (which indicates a large upper bound)
+            '''
+            # print("special case!!!")
+            # from utils import rule_to_string
+            # print(rule_to_string(rule,domain=domain,target_class_idx=1))
+            # print(rule_to_string(tmp_rule,domain=domain,target_class_idx=1))
+            synthetic_instances = population[:batch_size]
+            synthetic_instances_y = blackbox(synthetic_instances)
+            return synthetic_instances,synthetic_instances_y
 
         # todo remove visualization
         # import matplotlib.pyplot as plt
@@ -161,13 +169,16 @@ def sample_new_instances(region_1,region_2,X,Y,domain,blackbox,batch_size=1,popu
             # compute the best idx
             # TODO: using more quick K-nearest neighbour
             # a list of pairs in the form of (index, distance to its nearest neighbour)
-            knn = KDTree(transformer(np.asarray(previous_X_copy)),metric='euclidean')
-            K = min(30,covered_indices.shape[0])
-            distances,indices = knn.query(transformer(population), k=K)
-            distances = [ d.tolist() for d in distances]
-            indices = [idx.tolist() for idx in indices ]
+            # knn = KDTree(,metric='euclidean')
+            # K = min(30,covered_indices.shape[0])
+            # distances,indices = knn.query(, k=K)
+            # distances = [ d.tolist() for d in distances]
+            # indices = [idx.tolist() for idx in indices ]
 
-            idx_to_add = max([ (i,d) for i,d in enumerate(distances)], key = lambda x: sampling_criteria(population[x[0]],indices[x[0]], distances[x[0]],previous_X_copy,previous_Y_copy) )[0]
+            tmp = distance_function(transformer(np.asarray(population)), transformer(np.asarray(previous_X_copy)))
+            nearest_distances = np.amin(tmp, axis=1).tolist()
+
+            idx_to_add = max([ (i,d) for i,d in enumerate(nearest_distances)], key = lambda x: sampling_criteria(x[1]) )[0]
             # TODO: change this
 
             synthetic_rows.append(population[idx_to_add])
@@ -204,8 +215,18 @@ def sample_new_instances(region_1,region_2,X,Y,domain,blackbox,batch_size=1,popu
 
         synthetic_instances_y = np.row_stack(synthetic_rows_y).reshape((-1))
 
+
         return synthetic_instances,synthetic_instances_y
 
+    if region_1 is None or region_2 is None:
+        if region_1 is None and region_2 is None:
+            print("not possible two regions are empty!!!!")
+        if region_1 is None:
+            target_rule = region_2
+        if region_2 is None:
+            target_rule = region_1
+        new_X_1,new_Y_1 = sample_new_for_one_rule(target_rule,X,Y)
+        return np.concatenate((new_X_1,X) ),np.concatenate((new_Y_1,Y) )
     new_X_1,new_Y_1 = sample_new_for_one_rule(region_1,X,Y)
     X_new = np.concatenate((new_X_1,X) )
     Y_new = np.concatenate((new_Y_1,Y) )
@@ -220,14 +241,41 @@ def get_symmetric_difference(a_1,a_2,domain):
     Not that it is possible that one region is empty.
     '''
     # TODO:change here
-    if a_1.mode == "REMOVE_RULE":
-        region_1 = a_1.current_solution[a_1.remove_rule_idx]
-    else :
-        region_1 = a_1.new_solution[-1]
-    if a_2.mode == "REMOVE_RULE":
-        region_2 = a_2.current_solution[a_2.remove_rule_idx]
-    else:
-        region_2 = a_2.new_solution[-1]
+    # if a_1.mode == "REMOVE_RULE":
+    #     region_1 = a_1.current_solution[a_1.remove_rule_idx]
+    # else :
+    #     region_1 = a_1.new_solution[-1]
+    # if a_2.mode == "REMOVE_RULE":
+    #     region_2 = a_2.current_solution[a_2.remove_rule_idx]
+    # else:
+    #     region_2 = a_2.new_solution[-1]
+    region_1 = a_1.changed_rule
+    region_2 = a_2.changed_rule
+    from utils import rule_to_string
+    # print(rule_to_string(a_1.changed_rule,domain=domain,target_class_idx=1))
+    # print(rule_to_string(a_2.changed_rule,domain=domain,target_class_idx=1))
+    # print(rule_to_string(tmp_rule_1,domain=domain,target_class_idx=1))
+    # print(rule_to_string(tmp_rule_2,domain=domain,target_class_idx=1))
+
+    tmp_rule_1 = extend_rule(a_1.changed_rule,domain)
+    tmp_rule_2 = extend_rule(a_2.changed_rule,domain)
+    # tmp_rule_1 = a_1.changed_rule
+    # tmp_rule_2 = a_2.changed_rule
+
+    region_1 = tmp_rule_1 - tmp_rule_2
+    region_2 = tmp_rule_2 - tmp_rule_1
+    # if region_1 is not None:
+    #     print("r 1 not none")
+    #     print(rule_to_string(region_1,domain=domain,target_class_idx=1))
+    # else:
+    #     print("is none")
+    # if region_2 is not None:
+    #     print("r 2 not none")
+    #     print(rule_to_string(region_2,domain=domain,target_class_idx=1))
+    # else:
+    #     print("is none")
+
+    # print('***')
     return region_1,region_2
 
 def get_recall(solution,X,Y,target_class_idx=1):
@@ -253,12 +301,21 @@ def get_correct_cover_ruleset(solution,X,Y,target_class_idx=1):
     return np.where(corret_or_not == curr_covered_or_not)[0]
 
 def best_and_second_best_action(actions):
-    try:
-        tmp = heapq.nlargest(2,actions)
-        return tmp[0],tmp[1]
-    except:
-        # print("strange thing happened, there is only one action")
-        #
-        # print("num of actions",len(actions))
-        null_action = deepcopy(tmp[0]); null_action.make_hopeless()
-        return tmp[0],null_action
+    # try:
+    #     tmp = heapq.nlargest(2,actions)
+    #     return tmp[0],tmp[1]
+    # except:
+    #     # print("strange thing happened, there is only one action")
+    #     #
+    #     # print("num of actions",len(actions))
+    #     null_action = deepcopy(tmp[0]); null_action.make_hopeless()
+    #     return tmp[0],null_action
+    a_star = max(actions, key=lambda x:x.obj_estimation())
+    # rest_actions = deepcopy(actions).remove(a_star)
+    rest_actions = actions
+    # rest_actions = [a for a in actions if a!=a_star]
+    if len(rest_actions) == 0 :
+        a_prime = None
+    else:
+        a_prime = max(rest_actions,key=lambda x:x.upper())
+    return a_star,a_prime

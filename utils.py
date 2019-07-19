@@ -1,5 +1,9 @@
 import numpy as np
 
+def label_with_blackbox(data_table,blackbox):
+    from Orange.data import Table
+    return Table.from_numpy(X=data_table.X,Y=blackbox(data_table.X),domain=data_table.domain)
+
 def ruleset_predict(ruleset,X):
     curr_covered_or_not = np.zeros(X.shape[0], dtype=np.bool)
     for r in ruleset:
@@ -113,6 +117,7 @@ def rule_to_string_BRS_compat(rule,domain,target_class_idx):
 def rule_to_string(rule,domain,target_class_idx):
     attributes = domain.attributes
     class_var = domain.class_var
+
     if rule.conditions:
         cond = " AND ".join([
                             str(s.min) + " <= " +

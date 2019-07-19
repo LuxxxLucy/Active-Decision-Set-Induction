@@ -1,18 +1,20 @@
 # import some critical packages we use.
 import numpy as np
 import Orange
-from sklearn.neighbors import KDTree
 from sklearn.compose import make_column_transformer
 from sklearn.preprocessing import StandardScaler, OneHotEncoder,Normalizer
 from sklearn.metrics.pairwise import euclidean_distances as distance_function
 
 # import standard programming-purpose package
-import math
 import time
 from copy import deepcopy
 import random
 
+# import debug-purpose package
+import logging
+
 # import math
+import math
 
 # import local package
 from utils import rule_to_string
@@ -38,7 +40,6 @@ class ADS(DecisionSet):
 
 
         self.blackbox = blackbox
-
         self.target_class = target_class
         # for example target_class = 'yes' and the domain Y is ['no','yes']
         # then the target class idx = 1
@@ -47,12 +48,6 @@ class ADS(DecisionSet):
         categorical_features_idx = [i for i,a in enumerate(data_table.domain.attributes) if a.is_discrete]
         continuous_features_idx = [i for i,a in enumerate(data_table.domain.attributes) if a.is_continuous]
 
-        # this preprocessor is used to measure distance. As we have heterogeneous data
-        # self.preprocessor = make_column_transformer(
-        #                     ( OneHotEncoder(categories='auto'),categorical_features_idx),
-        #                     ( Normalizer(), continuous_features_idx),
-        #                     remainder = 'passthrough'
-        #                     )
         self.preprocessor = make_column_transformer( ( OneHotEncoder(categories='auto',sparse=False),categorical_features_idx),
         (StandardScaler(), continuous_features_idx),
                             remainder = 'passthrough'
@@ -61,17 +56,14 @@ class ADS(DecisionSet):
         # self.transformer = lambda x : self.preprocessor.transform(x).toarray()
         self.transformer = lambda x : self.preprocessor.transform(x)
 
+        self.solution_history=[]
+
     def initialize_synthetic_dataset(self):
         self.synthetic_data_table = Orange.data.Table.from_domain(domain=self.domain,n_rows=0) # synthetic data (now empty)
-
         X,Y = self.data_table.X,self.data_table.Y
         X_prime,Y_prime = self.synthetic_data_table.X,self.synthetic_data_table.Y
         self.total_X = np.append(X, X_prime, axis=0)
         self.total_Y = np.append(Y, Y_prime, axis=0)
-        start_time = time.time()
-        # end_time = time.time()
-        # self.knn = KDTree(self.transformer(self.total_X),metric='euclidean')
-        # print ('\tTook %0.3fs to generate the KDtree' % (time.time() - start_time ) )
         return
 
     def set_parameters(self,beta,lambda_parameter):
@@ -80,43 +72,31 @@ class ADS(DecisionSet):
         self.lambda_parameter = lambda_parameter
         self.beta = beta
 
-        self.T_0 = 1000
+        # self.T_0 = 1000
+
         self.N_batch = 10
         self.epsilon = 0.01
-        self.supp = 0.01
-        # self.supp = 1
-        self.maxlen= 3
+        self.supp=0.05
+
         # print("target class is:",self.target_class,". Its index is",self.target_class_idx)
         # TODO: add hyperparameter print
         return
 
     def initialize(self):
         self.termination = False
-        # self.current_solution = random.sample(self.rule_space,3)
+
         self.current_solution = []
-        self.current_obj = simple_objective(self.current_solution,self.data_table.X,self.data_table.Y,target_class_idx=self.target_class_idx)
+        self.current_obj = simple_objective(self.current_solution,self.data_table.X,self.data_table.Y,lambda_parameter=self.lambda_parameter,target_class_idx=self.target_class_idx)
         # print("initial obj: ",self.current_obj)
-        self.best_obj = self.current_obj
-        self.best_solution = self.current_solution
+        self.best_obj = deepcopy(self.current_obj)
+        self.best_solution = deepcopy(self.current_solution)
         if hasattr(self,'rule_space'):
             delattr(self, 'rule_space')
 
-
         # print(" compute initial rho")
-        knn = KDTree(self.transformer(self.data_table.X),metric='euclidean')
-        # X_transformed = self.transformer(self.data_table.X)
-        # tmp = distance_function(X_transformed, X_transformed)
-        # identity_matrix = np.identity(tmp.shape[0])
-        # average_nearest_distance = tmp + identity_matrix
-        # average_nearest_distance = np.amin(average_nearest_distance, axis=1)
-
-        K=30
-        distances,indices = knn.query(self.transformer(self.data_table.X), k=K)
-        distances = [ d[1] for d in distances]
-        average_nearest_distance = np.average(distances)
-        # self.rho = (self.data_table.X.shape[0] / 1 / average_nearest_distance)
         self.rho = (self.data_table.X.shape[0] / 1 )
         # print(" compute initial rho")
+        logging.info("initialization okay")
 
 
     def termination_condition(self):
@@ -128,12 +108,14 @@ class ADS(DecisionSet):
             return False
 
     def update_best_solution(self,best_action):
-        self.best_obj = simple_objective(self.best_solution,self.total_X,self.total_Y,target_class_idx=self.target_class_idx)
+        self.best_obj = simple_objective(self.best_solution,self.total_X,self.total_Y,lambda_parameter=self.lambda_parameter,target_class_idx=self.target_class_idx)
+
         if self.best_obj < best_action.obj_estimation():
-            self.best_obj = best_action.obj_estimation()
-            self.best_solution = best_action.new_solution
+            # print("best obj",self.best_obj," -> new obj",best_action.obj_estimation(),"number of rules",len(best_action.new_solution))
+            self.best_obj = best_action.empirical_obj
+            self.best_solution = deepcopy(best_action.new_solution)
             # todo: add obj update in the tqdm log
-            print("new best obj:",self.best_obj,"number of rules",len(self.best_solution))
+            # print("new best obj:",self.best_obj,"number of rules",len(self.best_solution))
         return
 
     def update_current_solution(self,best_action,actions):
@@ -144,11 +126,12 @@ class ADS(DecisionSet):
             '''re-start'''
             # print("re-staring!!!!!!!!!!!!")
             self.current_solution = []
-            self.current_obj = simple_objective(self.current_solution,self.data_table.X,self.data_table.Y,target_class_idx=self.target_class_idx)
+            self.current_obj = simple_objective(self.current_solution,self.data_table.X,self.data_table.Y,lambda_parameter=self.lambda_parameter,target_class_idx=self.target_class_idx)
             if hasattr(self,'rule_space'):
                 delattr(self, 'rule_space')
             return
         elif t < self.epsilon:
+            # print("take random")
             a = random.choice(actions)
         else:
             a = best_action
@@ -158,7 +141,12 @@ class ADS(DecisionSet):
         # print(prob)
         # if np.random.random() <= prob:
         #     self.current_solution = a.new_solution
-        self.current_solution = a.new_solution
+        self.current_solution = deepcopy(a.new_solution)
+        # todo: better solution than this, why could this happen?
+        self.current_solution = list(set(self.current_solution))
+        # self.current_obj = deepcopy(a.empirical_obj)
+        self.current_obj = a.obj_estimation()
+
         return
 
     def generate_action_space(self):
@@ -177,6 +165,7 @@ class ADS(DecisionSet):
 
     def generate_synthetic_instances(self,a_star,a_prime):
         region_1,region_2 = get_symmetric_difference(a_star,a_prime,self.domain)
+        # print(a_star.mode,a_prime.mode)
         X_new,Y_new = sample_new_instances(region_1,region_2,self.total_X,self.total_Y,self.domain,self.blackbox,transformer=self.transformer)
         return X_new,Y_new
 
@@ -187,6 +176,16 @@ class ADS(DecisionSet):
 
     def update_actions(self,actions,a_star,a_prime,X_new,Y_new):
         XY_new = Orange.data.Table(self.domain, X_new, Y_new)
+        # curr_covered_or_not = np.zeros(XY_new.X.shape[0], dtype=np.bool)
+        # curr_covered_or_not |= a_star.changed_rule.evaluate_data(XY_new.X)
+        # print(np.sum(curr_covered_or_not))
+        #
+        # curr_covered_or_not = np.zeros(XY_new.X.shape[0], dtype=np.bool)
+        # # for r in self.new_solution:
+        # #     curr_covered_or_not |= r.evaluate_data(X)
+        # curr_covered_or_not |= a_prime.changed_rule.evaluate_data(XY_new.X)
+        # print(np.sum(curr_covered_or_not))
+
         self.synthetic_data_table.extend(XY_new)
 
         self.total_X = np.append(self.total_X, XY_new.X, axis=0)
@@ -200,23 +199,19 @@ class ADS(DecisionSet):
             a.update_objective(self.total_X,self.total_Y,self.domain,target_class_idx=self.target_class_idx,transformer=self.transformer)
         return actions
 
-    def update_candidates(self,solutions,c_star,c_prime,X_new):
-        labels = self.blackbox(X_new)
-        XY_new = Orange.data.Table(self.domain, X_new, labels)
-        self.synthetic_data_table.extend(XY_new)
-        self.total_X = np.append(self.total_X, XY_new.X, axis=0)
-        self.total_Y = np.append(self.total_Y, XY_new.Y, axis=0)
-
-        for a in solutions:
-            a.update_objective(self.total_X,self.total_Y,self.domain,target_class_idx=self.target_class_idx)
-        return solutions
 
     def update(self):
         self.count+=1
+        self.solution_history.append(deepcopy(self.current_solution))
+
+    def output_the_best(self,lambda_parameter=0.001):
+        best_solution = max( self.solution_history,key=lambda x: simple_objective(x,self.total_X,self.total_Y,lambda_parameter=lambda_parameter,target_class_idx=self.target_class_idx) )
+
+        return best_solution
 
     def output(self):
-        return self.best_solution
+        return self.output_the_best(lambda_parameter=self.lambda_parameter)
 
-    def compute_accuracy(self):
-        theta = len(get_correct_cover_ruleset(self.best_solution,self.total_X,self.total_Y,target_class_idx=self.target_class_idx)) * 1.0 / len(self.total_X)
+    def compute_accuracy(self,rule_set):
+        theta = len(get_correct_cover_ruleset(rule_set,self.total_X,self.total_Y,target_class_idx=self.target_class_idx)) * 1.0 / len(self.total_X)
         return theta

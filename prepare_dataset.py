@@ -12,6 +12,20 @@ return dataset is a Orange Table.
 
 I really don't like Pandas....
 '''
+from Orange.data import Table
+from sklearn.model_selection import train_test_split
+
+
+
+def train_test_split_data(data_table):
+    X_train,X_test,y_train,y_test = train_test_split(data_table.X,data_table.Y,test_size=0.33,random_state=42)
+
+
+    train_data_table = Table.from_numpy(X=X_train,Y=y_train,domain=data_table.domain)
+
+    test_data_table = Table.from_numpy(X=X_test,Y=y_test,domain=data_table.domain)
+
+    return train_data_table,test_data_table
 
 def prepare_2d_sinusoidal_dataset(number=100):
     np.random.seed(42)
@@ -35,13 +49,52 @@ def prepare_2d_sinusoidal_dataset(number=100):
                     [DiscreteVariable("hit", ("no", "yes"))])
     data = Table(domain, X, Y)
 
-    final_data_table = Table(data.domain, random.sample(data, number))
+    data_table = Table(data.domain, random.sample(data, number))
+    train_table, test_table = train_test_split_data(data_table)
 
-    return final_data_table
+    return train_table,test_table
+
+def prepare_compas_dataset(train_filename="compas_train.csv",test_filename="compas_test.csv",path_data="./datasets/compas/"):
+    np.random.seed(42)
+    df = pd.read_csv(path_data + train_filename, delimiter=',')
+    from utils import data_table_from_dataframe
+    train_data_table,df = data_table_from_dataframe(df,Y_column_idx=-1)
+
+    df = pd.read_csv(path_data + test_filename, delimiter=',')
+    from utils import data_table_from_dataframe
+    test_data_table,df = data_table_from_dataframe(df,Y_column_idx=-1)
+
+    return train_data_table,test_data_table
+
+def prepare_diabetes_dataset(filename="diabetic_data.csv",path_data="./datasets/diabetes/"):
+    np.random.seed(42)
+    df = pd.read_csv(path_data + filename, delimiter=',')
+
+    # for col in df.columns:
+    # if '?' in df[col].unique():
+    #     df[col][df[col] == '?'] = df[col].value_counts()[0]
+
+    # remove information-less ids
+    df = df.drop(df.columns[[0, 1]], axis=1)
+    continuous_columns = [7,10,11,12,13,14,15,19]
+    # for i,c in enumerate(df.columns)
+    #     if i in continuous_columns:
+    #         df[c].astype("float64")
+    #     else:
+    #         df[c].astype("str")
+
+    from utils import data_table_from_dataframe
+    train_data_table,df = data_table_from_dataframe(df,Y_column_idx=-1)
+
+    # df = pd.read_csv(path_data + test_filename, delimiter=',')
+    # from utils import data_table_from_dataframe
+    # test_data_table,df = data_table_from_dataframe(df,Y_column_idx=-1)
+    return train_data_table,None
 
 
 
-def prepare_german_dataset(filename, path_data):
+
+def prepare_german_dataset(filename="german_credit.csv", path_data="./datasets/german/"):
     np.random.seed(42)
     # Read Dataset
     df = pd.read_csv(path_data + filename, delimiter=',')
@@ -49,8 +102,9 @@ def prepare_german_dataset(filename, path_data):
     replace_str_function = lambda x : x.replace("_","~")
     df = df.rename(replace_str_function,axis='columns')
     from utils import data_table_from_dataframe
-    data_table = data_table_from_dataframe(df,Y_column_idx=0)
-    return data_table
+    data_table,df = data_table_from_dataframe(df,Y_column_idx=0)
+    train_table, test_table = train_test_split_data(data_table)
+    return train_table,test_table
 
 
 def prepare_adult_dataset(filename, path_data):
@@ -64,10 +118,10 @@ def prepare_adult_dataset(filename, path_data):
     del df['education-num']
 
     # Remove Missing Values
+
     for col in df.columns:
         if '?' in df[col].unique():
             df[col][df[col] == '?'] = df[col].value_counts().index[0]
-
     # Read Dataset
 
     replace_str_function = lambda x : x.replace("_","~")
@@ -75,84 +129,6 @@ def prepare_adult_dataset(filename, path_data):
 
     from utils import data_table_from_dataframe
 
-    data_table = data_table_from_dataframe(df,Y_column_idx=-1)
+    data_table,df = data_table_from_dataframe(df,Y_column_idx=-1)
 
-    return data_table
-
-
-def prepare_compass_dataset(filename, path_data):
-
-    # Read Dataset
-    df = pd.read_csv(path_data + filename, delimiter=',', skipinitialspace=True)
-
-    columns = ['age', 'age_cat', 'sex', 'race',  'priors_count', 'days_b_screening_arrest', 'c_jail_in', 'c_jail_out',
-               'c_charge_degree', 'is_recid', 'is_violent_recid', 'two_year_recid', 'decile_score', 'score_text']
-
-    df = df[columns]
-
-    df['days_b_screening_arrest'] = np.abs(df['days_b_screening_arrest'])
-
-    df['c_jail_out'] = pd.to_datetime(df['c_jail_out'])
-    df['c_jail_in'] = pd.to_datetime(df['c_jail_in'])
-    df['length_of_stay'] = (df['c_jail_out'] - df['c_jail_in']).dt.days
-    df['length_of_stay'] = np.abs(df['length_of_stay'])
-
-    df['length_of_stay'].fillna(df['length_of_stay'].value_counts().index[0], inplace=True)
-    df['days_b_screening_arrest'].fillna(df['days_b_screening_arrest'].value_counts().index[0], inplace=True)
-
-    df['length_of_stay'] = df['length_of_stay'].astype(int)
-    df['days_b_screening_arrest'] = df['days_b_screening_arrest'].astype(int)
-
-    def get_class(x):
-        if x < 7:
-            return 'Medium-Low'
-        else:
-            return 'High'
-    df['class'] = df['decile_score'].apply(get_class)
-
-    del df['c_jail_in']
-    del df['c_jail_out']
-    del df['decile_score']
-    del df['score_text']
-
-    columns = df.columns.tolist()
-    columns = columns[-1:] + columns[:-1]
-    df = df[columns]
-    class_name = 'class'
-    possible_outcomes = list(df[class_name].unique())
-
-    type_features, features_type = recognize_features_type(df, class_name)
-
-    discrete = ['is_recid', 'is_violent_recid', 'two_year_recid']
-    discrete, continuous = set_discrete_continuous(columns, type_features, class_name, discrete=discrete,
-                                                   continuous=None)
-
-    columns_tmp = list(columns)
-    columns_tmp.remove(class_name)
-    idx_features = {i: col for i, col in enumerate(columns_tmp)}
-
-    # Dataset Preparation for Scikit Alorithms
-    df_le, label_encoder = label_encode(df, discrete)
-    X = df_le.loc[:, df_le.columns != class_name].values
-    y = df_le[class_name].values
-
-    feature_values = calculate_feature_values(X, columns, class_name, discrete, continuous, discrete_use_probabilities=False, continuous_function_estimation=False)
-
-    dataset = {
-        'name': filename.replace('.csv', ''),
-        'df': df,
-        'columns': list(columns),
-        'class_name': class_name,
-        'possible_outcomes': possible_outcomes,
-        'type_features': type_features,
-        'features_type': features_type,
-        'feature_values': feature_values,
-        'discrete': discrete,
-        'continuous': continuous,
-        'idx_features': idx_features,
-        'label_encoder': label_encoder,
-        'X': X,
-        'y': y,
-    }
-
-    return dataset
+    return data_table,df
