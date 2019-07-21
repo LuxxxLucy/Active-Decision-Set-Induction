@@ -219,14 +219,7 @@ def sample_new_instances(region_1,region_2,X,Y,domain,blackbox,batch_size=1,popu
         return synthetic_instances,synthetic_instances_y
 
     if region_1 is None or region_2 is None:
-        if region_1 is None and region_2 is None:
-            print("not possible two regions are empty!!!!")
-        if region_1 is None:
-            target_rule = region_2
-        if region_2 is None:
-            target_rule = region_1
-        new_X_1,new_Y_1 = sample_new_for_one_rule(target_rule,X,Y)
-        return np.concatenate((new_X_1,X) ),np.concatenate((new_Y_1,Y) )
+        print("strange! there is a none region")
     new_X_1,new_Y_1 = sample_new_for_one_rule(region_1,X,Y)
     X_new = np.concatenate((new_X_1,X) )
     Y_new = np.concatenate((new_Y_1,Y) )
@@ -257,13 +250,11 @@ def get_symmetric_difference(a_1,a_2,domain):
     # print(rule_to_string(tmp_rule_1,domain=domain,target_class_idx=1))
     # print(rule_to_string(tmp_rule_2,domain=domain,target_class_idx=1))
 
-    tmp_rule_1 = extend_rule(a_1.changed_rule,domain)
-    tmp_rule_2 = extend_rule(a_2.changed_rule,domain)
-    # tmp_rule_1 = a_1.changed_rule
-    # tmp_rule_2 = a_2.changed_rule
-
-    region_1 = tmp_rule_1 - tmp_rule_2
-    region_2 = tmp_rule_2 - tmp_rule_1
+    # tmp_rule_1 = extend_rule(a_1.changed_rule,domain)
+    # tmp_rule_2 = extend_rule(a_2.changed_rule,domain)
+    #
+    # region_1 = tmp_rule_1 - tmp_rule_2
+    # region_2 = tmp_rule_2 - tmp_rule_1
     # if region_1 is not None:
     #     print("r 1 not none")
     #     print(rule_to_string(region_1,domain=domain,target_class_idx=1))
@@ -310,10 +301,11 @@ def best_and_second_best_action(actions):
     #     # print("num of actions",len(actions))
     #     null_action = deepcopy(tmp[0]); null_action.make_hopeless()
     #     return tmp[0],null_action
-    a_star = max(actions, key=lambda x:x.obj_estimation())
+    a_star_idx,a_star = max(enumerate(actions), key=lambda x:x[1].obj_estimation())
     # rest_actions = deepcopy(actions).remove(a_star)
-    rest_actions = actions
-    # rest_actions = [a for a in actions if a!=a_star]
+    # rest_actions = actions
+    # rest_actions = [a for i,a in enumerate(actions) if i!=a_star_idx]
+    rest_actions = [a for a in actions if a!=a_star]
     if len(rest_actions) == 0 :
         a_prime = None
     else:

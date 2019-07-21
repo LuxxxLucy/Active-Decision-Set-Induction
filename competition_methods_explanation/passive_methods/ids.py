@@ -11,7 +11,7 @@ import Orange
 from .IDS.IDS_smooth_local import *
 from .IDS.utils import rules_convert
 
-def explain_tabular(dataset, blackbox, target_class='yes', pre_label=True, random_seed=42):
+def explain_tabular(dataset, blackbox, target_class_idx=1, pre_label=True, random_seed=42):
     '''
     Input Params:
     1. dataset: a Orange data table
@@ -70,5 +70,5 @@ def explain_tabular(dataset, blackbox, target_class='yes', pre_label=True, rando
         rule_set = [ list_of_rules[idx] for idx in s2]
 
     # convert the rule representation
-    rule_set = rules_convert(rule_set,dataset, target_class=target_class)
+    rule_set = rules_convert(rule_set,dataset, target_class_idx=target_class_idx)
     return rule_set

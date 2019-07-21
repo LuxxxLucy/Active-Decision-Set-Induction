@@ -11,6 +11,7 @@ def ruleset_predict(ruleset,X):
     return curr_covered_or_not
 
 def bds_ruleset_predict(ruleset,X,domain):
+    import operator
 
     curr_covered_or_not = np.zeros(X.shape[0], dtype=np.bool)
     for r in ruleset:

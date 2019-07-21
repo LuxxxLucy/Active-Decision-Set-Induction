@@ -72,7 +72,8 @@ class ADS(DecisionSet):
         self.lambda_parameter = lambda_parameter
         self.beta = beta
 
-        # self.T_0 = 1000
+        self.T_0 = 1000
+        self.T_0 = 1
 
         self.N_batch = 10
         self.epsilon = 0.01
@@ -137,11 +138,19 @@ class ADS(DecisionSet):
             a = best_action
 
         # T = self.T_0**(1 - self.count/self.N_iter_max)
+        T = self.T_0* (1- self.count /self.N_iter_max)
         # prob = min(1, np.exp( (a.obj_estimation()- self.current_obj) / T)  )
+        prob = min(1, np.exp( (a.obj_estimation()) / T)  )
         # print(prob)
-        # if np.random.random() <= prob:
-        #     self.current_solution = a.new_solution
-        self.current_solution = deepcopy(a.new_solution)
+        if np.random.random() <= prob:
+            self.current_solution = a.new_solution
+            self.current_solution = list(set(self.current_solution))
+            # self.current_obj = deepcopy(a.empirical_obj)
+            self.current_obj = a.obj_estimation()
+        else:
+            print("rejected!",prob)
+
+        self.current_solution = a.new_solution
         # todo: better solution than this, why could this happen?
         self.current_solution = list(set(self.current_solution))
         # self.current_obj = deepcopy(a.empirical_obj)
@@ -150,7 +159,11 @@ class ADS(DecisionSet):
         return
 
     def generate_action_space(self):
+        import time
+        start_time = time.time()
+        # end_time = time.time()
         actions = self.generate_action(self.total_X,self.total_Y,beta=self.beta,rho=self.rho,transformer=self.transformer)
+        # print ('\tTook %0.3fs to generate for mode %s, total %s actions' % ( time.time() - start_time, actions[0].mode, str(len(actions)) ) )
 
         # print(len(actions))
         # from utils import rule_to_string
@@ -169,28 +182,11 @@ class ADS(DecisionSet):
         X_new,Y_new = sample_new_instances(region_1,region_2,self.total_X,self.total_Y,self.domain,self.blackbox,transformer=self.transformer)
         return X_new,Y_new
 
-    def generate_synthetic_instances_for_solution(self,sol_1,sol_2):
-        # region_1,region_2 = get_symmetric_difference(a_star,a_prime,self.domain)
-        X_new = sample_new_instances_for_solution(sol_1,sol_2,self.total_X,self.total_Y,self.domain,self.blackbox)
-        return X_new
-
     def update_actions(self,actions,a_star,a_prime,X_new,Y_new):
         XY_new = Orange.data.Table(self.domain, X_new, Y_new)
-        # curr_covered_or_not = np.zeros(XY_new.X.shape[0], dtype=np.bool)
-        # curr_covered_or_not |= a_star.changed_rule.evaluate_data(XY_new.X)
-        # print(np.sum(curr_covered_or_not))
-        #
-        # curr_covered_or_not = np.zeros(XY_new.X.shape[0], dtype=np.bool)
-        # # for r in self.new_solution:
-        # #     curr_covered_or_not |= r.evaluate_data(X)
-        # curr_covered_or_not |= a_prime.changed_rule.evaluate_data(XY_new.X)
-        # print(np.sum(curr_covered_or_not))
-
         self.synthetic_data_table.extend(XY_new)
-
         self.total_X = np.append(self.total_X, XY_new.X, axis=0)
         self.total_Y = np.append(self.total_Y, XY_new.Y, axis=0)
-
         start_time = time.time()
         # end_time = time.time()
         # print ('\tTook %0.3fs to generate the KDtree' % (time.time() - start_time ) )
@@ -211,6 +207,7 @@ class ADS(DecisionSet):
 
     def output(self):
         return self.output_the_best(lambda_parameter=self.lambda_parameter)
+        # return self.best_solution
 
     def compute_accuracy(self,rule_set):
         theta = len(get_correct_cover_ruleset(rule_set,self.total_X,self.total_Y,target_class_idx=self.target_class_idx)) * 1.0 / len(self.total_X)

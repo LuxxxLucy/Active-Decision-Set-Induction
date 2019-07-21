@@ -10,7 +10,7 @@ import Orange
 # import local package
 from .BRS.model import BRS
 
-def explain_tabular(dataset, blackbox, target_class='yes', pre_label=True, random_seed=42):
+def explain_tabular(dataset, blackbox, target_class_idx=1, pre_label=True, random_seed=42):
     '''
     Input Params:
     1. dataset: a Orange data table
@@ -28,6 +28,7 @@ def explain_tabular(dataset, blackbox, target_class='yes', pre_label=True, rando
         dataset = Orange.data.Table(dataset.domain, dataset.X, labels)
 
     # fit the explainer to the data
+    target_class = dataset.domain.class_var.values[target_class_idx]
     explainer = BRS(dataset, blackbox)
     rule_set = explainer.fit(dataset.domain,dataset.X,dataset.Y,target_class=target_class)
 

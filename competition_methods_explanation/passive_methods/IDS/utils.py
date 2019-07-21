@@ -1,5 +1,5 @@
 import numpy as np
-def rules_convert(rule_set_IDS,data_table,target_class):
+def rules_convert(rule_set_IDS,data_table,target_class_idx):
     import operator
     import re
     import math
@@ -146,6 +146,7 @@ def rules_convert(rule_set_IDS,data_table,target_class):
             feature.min = min([ d[feature] for d in data_table ]).value
 
     import re
+    target_class = data_table.domain.class_var.values[ int(target_class_idx) ]
     rule_set = []
     col_names = [it.name for it in data_table.domain.attributes]
     possible_range = [ (it.min,it.max) if it.is_continuous else (0,0) for it in data_table.domain.attributes   ]
