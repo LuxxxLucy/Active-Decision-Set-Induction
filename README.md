@@ -38,7 +38,7 @@ Passive approaches:
 1. __Interpretable decision set__ (TODO)
 2. __BETA__ (TODO)
 3. __Bayesian decision set__ in `BRS.py`: adopted from the original code. fixes some bugs and compatibility issues.
-4. __Scalable Bayesian Decision List__ (TODO)
+4. __Scalable Bayesian Decision List__. first you need `R` and install `sbrl` in `R`. Then for python warpper, change directory to `/SBRL` in the baseline directory. run `pip install numpy pandas tzlocal;pip install rpy2; pip install -e .`
 5. __RuleMatrix__ (sampling+SBDL)
 6. __CN2__ and __CN2SD__ in `cn2.py`: the famous CN2 sequential-covering algorithm. The CN2SD is a very useful variant (CN2 for subgroup discovery).
 

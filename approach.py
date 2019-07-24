@@ -8,13 +8,14 @@ import operator
 import Orange
 
 # import local package
-from model import ADS
+from model import ADS_Learner
 from core import best_and_second_best_action
 
-from tqdm import tqdm_notebook as tqdm
+# from tqdm import tqdm_notebook as tqdm
+from tqdm import tqdm
 import logging
 import time
-# from tqdm import tqdm
+import os
 
 def explain_tabular(dataset,blackbox, target_class_idx=1, pre_label=True, random_seed=42,beta=1,lambda_parameter=0.01):
     '''
@@ -27,6 +28,11 @@ def explain_tabular(dataset,blackbox, target_class_idx=1, pre_label=True, random
     A decision set.
     '''
     np.random.seed(random_seed)
+    random.seed(random_seed)
+    # os.environ['PYTHONHASHSEED'] = random_seed
+    # hash(1)
+    # print(os.environ['PYTHONHASHSEED'])
+    # quit()
     # logging.basicConfig(level=logging.DEBUG)
     logging.basicConfig(level=logging.WARNING)
 
@@ -44,11 +50,12 @@ def explain_tabular(dataset,blackbox, target_class_idx=1, pre_label=True, random
     # initialize with the true data instances
     logging.info('construct the object')
     target_class = dataset.domain.class_var.values[target_class_idx]
-    explainer = ADS(dataset, blackbox, target_class=target_class) # fit the explainer to the data
+    explainer = ADS_Learner(dataset, blackbox, target_class=target_class) # fit the explainer to the data
     logging.info('object construct okay')
 
+    print("new cached!")
 
-    print("using SA")
+
     logging.info('set hyperparameter: beta and lambda')
     explainer.set_parameters(beta=beta,lambda_parameter=lambda_parameter) # set hyperparameter
 
@@ -61,11 +68,11 @@ def explain_tabular(dataset,blackbox, target_class_idx=1, pre_label=True, random
     # the local search: main algorithm
     logging.info('Begin the outer loop')
     for iter_number in tqdm(range(explainer.N_iter_max)):
+    # for iter_number in range(explainer.N_iter_max):
         start_time = time.time()
         try:
             actions = explainer.generate_action_space() # generating possible actions
         except Exception as e:
-            # print(e)
             error_log_list.append((iter_number,e))
             continue
         # actions = explainer.generate_action_space() # generating possible actions
@@ -111,12 +118,12 @@ def explain_tabular(dataset,blackbox, target_class_idx=1, pre_label=True, random
     # print("the number of rules",len(rule_set))
     # print("the number of new instances generated",len(explainer.synthetic_data_table))
     explainer.error_log_list = error_log_list
-    # print("Now print Error Log")
-    # if len(error_log_list) == 0:
-    #     print("no error happens")
-    # else:
-    #     for iter_num,e in error_log_list:
-    #         print("at iteration:",iter_num,"happens the following error")
-    #         print(e)
+    print("Now print Error Log")
+    if len(error_log_list) == 0:
+        print("no error happens")
+    else:
+        for iter_num,e in error_log_list:
+            print("at iteration:",iter_num,"happens the following error")
+            print(e)
 
     return rule_set,explainer

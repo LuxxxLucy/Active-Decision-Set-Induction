@@ -17,19 +17,17 @@ import logging
 import math
 
 # import local package
+from structure import Decision_Set_Learner,Rule,deepcopy_decision_set
 from utils import rule_to_string
 from core import simple_objective,get_correct_cover_ruleset,get_symmetric_difference,sample_new_instances
-from structure import DecisionSet
 
-
-class ADS(DecisionSet):
+class ADS_Learner(Decision_Set_Learner):
     '''
     The Active Decision Set model
     '''
     def __init__(self,data_table, blackbox,target_class='yes',seed=42):
         random.seed(seed)
-        self.count=0
-
+        super().__init__(data_table,target_class,seed=42)
         self.data_table = data_table
         self.domain = data_table.domain
         # for continuous variabels, we compute max and min
@@ -45,6 +43,7 @@ class ADS(DecisionSet):
         # then the target class idx = 1
         self.target_class_idx = self.data_table.domain.class_var.values.index(self.target_class)
 
+        self.count=0
         categorical_features_idx = [i for i,a in enumerate(data_table.domain.attributes) if a.is_discrete]
         continuous_features_idx = [i for i,a in enumerate(data_table.domain.attributes) if a.is_continuous]
 
@@ -68,16 +67,14 @@ class ADS(DecisionSet):
 
     def set_parameters(self,beta,lambda_parameter):
         self.N_iter_max = 1000
-        # self.N_iter_max = 100
+        # self.N_iter_max = 200
         self.lambda_parameter = lambda_parameter
         self.beta = beta
-
-        self.T_0 = 1000
-        self.T_0 = 1
 
         self.N_batch = 10
         self.epsilon = 0.01
         self.supp=0.05
+        self.supp=0.01
 
         # print("target class is:",self.target_class,". Its index is",self.target_class_idx)
         # TODO: add hyperparameter print
@@ -90,7 +87,9 @@ class ADS(DecisionSet):
         self.current_obj = simple_objective(self.current_solution,self.data_table.X,self.data_table.Y,lambda_parameter=self.lambda_parameter,target_class_idx=self.target_class_idx)
         # print("initial obj: ",self.current_obj)
         self.best_obj = deepcopy(self.current_obj)
-        self.best_solution = deepcopy(self.current_solution)
+        # self.best_solution = [ Rule(conditions=[deepcopy(c) for c in r.conditions],domain=domain,target_class_idx=target_class_idx) for r in self.current_solution];
+        self.best_solution = deepcopy_decision_set(self.current_solution);
+
         if hasattr(self,'rule_space'):
             delattr(self, 'rule_space')
 
@@ -111,10 +110,12 @@ class ADS(DecisionSet):
     def update_best_solution(self,best_action):
         self.best_obj = simple_objective(self.best_solution,self.total_X,self.total_Y,lambda_parameter=self.lambda_parameter,target_class_idx=self.target_class_idx)
 
-        if self.best_obj < best_action.obj_estimation():
+        if self.best_obj < best_action.empirical_obj:
             # print("best obj",self.best_obj," -> new obj",best_action.obj_estimation(),"number of rules",len(best_action.new_solution))
             self.best_obj = best_action.empirical_obj
-            self.best_solution = deepcopy(best_action.new_solution)
+            # self.best_solution = [ Rule(conditions=[deepcopy(c) for c in r.conditions],domain=domain,target_class_idx=target_class_idx) for r in best_action.new_solution];
+            self.best_solution = deepcopy_decision_set(best_action.new_solution);
+
             # todo: add obj update in the tqdm log
             # print("new best obj:",self.best_obj,"number of rules",len(self.best_solution))
         return
@@ -127,7 +128,7 @@ class ADS(DecisionSet):
             '''re-start'''
             # print("re-staring!!!!!!!!!!!!")
             self.current_solution = []
-            self.current_obj = simple_objective(self.current_solution,self.data_table.X,self.data_table.Y,lambda_parameter=self.lambda_parameter,target_class_idx=self.target_class_idx)
+            self.current_obj = simple_objective(self.current_solution,self.total_X,self.total_Y,lambda_parameter=self.lambda_parameter,target_class_idx=self.target_class_idx)
             if hasattr(self,'rule_space'):
                 delattr(self, 'rule_space')
             return
@@ -136,25 +137,45 @@ class ADS(DecisionSet):
             a = random.choice(actions)
         else:
             a = best_action
+            if a.hopeless == True:
+                # todo explain here.
+                print("hopeless, at iter",self.count,"mode",a.mode)
+                return
 
-        # T = self.T_0**(1 - self.count/self.N_iter_max)
-        T = self.T_0* (1- self.count /self.N_iter_max)
-        # prob = min(1, np.exp( (a.obj_estimation()- self.current_obj) / T)  )
-        prob = min(1, np.exp( (a.obj_estimation()) / T)  )
-        # print(prob)
-        if np.random.random() <= prob:
-            self.current_solution = a.new_solution
-            self.current_solution = list(set(self.current_solution))
-            # self.current_obj = deepcopy(a.empirical_obj)
-            self.current_obj = a.obj_estimation()
-        else:
-            print("rejected!",prob)
+        # # T = self.T_0**(1 - self.count/self.N_iter_max)
+        # T = self.T_0* (1- self.count /self.N_iter_max)
+        # # prob = min(1, np.exp( (a.obj_estimation()- self.current_obj) / T)  )
+        # prob = min(1, np.exp( (a.obj_estimation()) / T)  )
+        # # print(prob)
+        # if np.random.random() <= prob:
+        #     self.current_solution = a.new_solution
+        #     self.current_solution = list(set(self.current_solution))
+        #     # self.current_obj = deepcopy(a.empirical_obj)
+        #     self.current_obj = a.obj_estimation()
+        # else:
+        #     print("rejected!",prob)
+
+        # print("mode",self.mode)
+        # print("changed rule",a.changed_rule.string_representation)
+        # print("before updated set")
+        # for e in self.current_solution:
+        #     print(e.string_representation)
+        # print("before updated set of actions")
+        # for e in a.current_solution:
+        #     print(e.string_representation)
+        # print("after updated set")
+        # for e in a.new_solution:
+        #     print(e.string_representation)
 
         self.current_solution = a.new_solution
         # todo: better solution than this, why could this happen?
-        self.current_solution = list(set(self.current_solution))
+        self.current_solution = sorted(set(self.current_solution),key=lambda x:x.string_representation)
         # self.current_obj = deepcopy(a.empirical_obj)
         self.current_obj = a.obj_estimation()
+
+
+
+
 
         return
 
@@ -163,7 +184,7 @@ class ADS(DecisionSet):
         start_time = time.time()
         # end_time = time.time()
         actions = self.generate_action(self.total_X,self.total_Y,beta=self.beta,rho=self.rho,transformer=self.transformer)
-        # print ('\tTook %0.3fs to generate for mode %s, total %s actions' % ( time.time() - start_time, actions[0].mode, str(len(actions)) ) )
+        # print ('at iter %s \tTook %0.3fs  mode %s total %s actions current rule number %s' % ( str(self.count),time.time() - start_time, actions[0].mode, str(len(actions)),str(len(self.current_solution)) ) )
 
         # print(len(actions))
         # from utils import rule_to_string
@@ -190,15 +211,17 @@ class ADS(DecisionSet):
         start_time = time.time()
         # end_time = time.time()
         # print ('\tTook %0.3fs to generate the KDtree' % (time.time() - start_time ) )
-
+        self.current_obj =  simple_objective(self.current_solution,self.total_X,self.total_Y,lambda_parameter=self.lambda_parameter,target_class_idx=self.target_class_idx)
         for a in actions:
+            a.update_current_obj(self.current_obj)
             a.update_objective(self.total_X,self.total_Y,self.domain,target_class_idx=self.target_class_idx,transformer=self.transformer)
         return actions
 
 
     def update(self):
         self.count+=1
-        self.solution_history.append(deepcopy(self.current_solution))
+        self.solution_history.append(deepcopy_decision_set(self.current_solution))
+
 
     def output_the_best(self,lambda_parameter=0.001):
         best_solution = max( self.solution_history,key=lambda x: simple_objective(x,self.total_X,self.total_Y,lambda_parameter=lambda_parameter,target_class_idx=self.target_class_idx) )
@@ -206,7 +229,8 @@ class ADS(DecisionSet):
         return best_solution
 
     def output(self):
-        return self.output_the_best(lambda_parameter=self.lambda_parameter)
+        result =  self.output_the_best(lambda_parameter=self.lambda_parameter)
+        return sorted(result,key=lambda x:x.string_representation)
         # return self.best_solution
 
     def compute_accuracy(self,rule_set):

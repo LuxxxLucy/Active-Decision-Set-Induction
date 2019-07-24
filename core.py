@@ -14,70 +14,30 @@ from sklearn.metrics.pairwise import euclidean_distances as distance_function
 
 from sklearn.gaussian_process import GaussianProcessRegressor
 
+
 def simple_objective(solution,X,Y,lambda_parameter=0.01,target_class_idx=1):
-    curr_covered_or_not = np.zeros(X.shape[0], dtype=np.bool)
-
-    for r in solution:
-        curr_covered_or_not |= r.evaluate_data(X)
-
+    #
+    # for r in solution:
+    #     curr_covered_or_not |= r.evaluate_data(X)
+    if len(solution) > 0:
+        tmp = np.stack([r.evaluate_data(X) for r in solution])
+    else:
+        tmp = np.zeros(X.shape[0], dtype=np.bool)
+    curr_covered_or_not = np.any(tmp,axis=0)
     corret_or_not = np.equal(Y,target_class_idx)
-    theta = sklearn.metrics.accuracy_score(corret_or_not,curr_covered_or_not)
-    # positive_indices = np.where(Y == target_class_idx)[0]
-    # covered_indices = np.where(curr_covered_or_not == True)[0]
-    # not_covered_indices = np.where(curr_covered_or_not != True)[0]
-    #
-    # if covered_indices.shape[0] != 0:
-    #     term_1 = np.intersect1d(positive_indices,covered_indices ).shape[0] / covered_indices.shape[0]
-    # else:
-    #     term_1 = 0
-    # if not_covered_indices.shape[0] != 0:
-    #     term_2 = np.intersect1d(positive_indices,not_covered_indices ).shape[0] / not_covered_indices.shape[0]
-    # else:
-    #     term_2 = 0
-    #
-    # theta =  term_1 - term_2
+
+    # theta = sklearn.metrics.accuracy_score(corret_or_not,curr_covered_or_not)
+    hit_or_not = np.equal(corret_or_not,curr_covered_or_not)
+    theta = np.count_nonzero(hit_or_not) / hit_or_not.shape[0]
+
+
     return theta - lambda_parameter * len(solution)
 
 def sampling_criteria(distance_to_nearest_neighnour):
     '''
     simple version is only distance
     '''
-    # y_estimated = sum([  (1/dist) * 2 * ( Y[idx] -0.5)  for idx,dist in zip(neighbours,neighbors_distances) ]) / sum([1/dist for dist in neighbors_distances])
-
     s = distance_to_nearest_neighnour
-    # try:
-    #     y_variance = 1 / (1+math.exp(distance_ratio))
-    # except:
-    #     print(neighbors_distances)
-    #     print(average_nearest_distance)
-    #     print(distance_ratio)
-    #     quit()
-
-
-    # X = [X[idx] for idx in neighbours]
-    # X = transformer(np.asarray(X))
-    # y = [Y[idx] for idx in neighbours]
-    # # start_time = time.time()
-    # gpr = GaussianProcessRegressor(random_state=42).fit(X,y)
-    # # print ('\tTook %0.3fs to generate the local gpr' % (time.time() - start_time ) )
-    #
-    # predition = gpr.predict( transformer(np.asarray([x])),return_std=True )
-    # mean,variance = predition
-    # y_estimated = mean[0]
-    # y_variance = variance[0]
-
-    # s = 0.000001*y_variance - abs( y_estimated - 0.5 )
-    # s =  - abs( y_estimated - 0.5 )
-    # s = 1.96*y_variance  - abs( y_estimated )
-
-
-    # s = distance_to_nearest_neighnour
-    # s = - abs( y_estimated - 0.5 )
-    # s = np.random.random()
-    # s = 10*distance_to_nearest_neighnour - abs( y_estimated - 0.5 )
-    # s = 1.96*distance_to_nearest_neighnour - abs( y_estimated - 0.5 )
-    # s = 0.01*distance_to_nearest_neighnour - abs( y_estimated - 0.5 )
-    # s = 10*neighbors_distances[0]
     return s
 
 def extend_rule(rule,domain):
@@ -271,23 +231,26 @@ def get_symmetric_difference(a_1,a_2,domain):
 
 def get_recall(solution,X,Y,target_class_idx=1):
 
-    curr_covered_or_not = np.zeros(X.shape[0], dtype=np.bool)
-    for r in solution:
-        curr_covered_or_not |= r.evaluate_data(X)
+    # curr_covered_or_not = np.zeros(X.shape[0], dtype=np.bool)
+    # for r in solution:
+    #     curr_covered_or_not |= r.evaluate_data(X)
+    curr_covered_or_not = np.logical_or.reduce( [r.evaluate_data(X) for r in solution] )
     corret_or_not = np.equal(Y,target_class_idx)
     return sklearn.metrics.recall_score(corret_or_not,curr_covered_or_not)
 
 def get_incorrect_cover_ruleset(solution,X,Y,target_class_idx=1):
-    curr_covered_or_not = np.zeros(X.shape[0], dtype=np.bool)
-    for r in solution:
-        curr_covered_or_not |= r.evaluate_data(X)
+    # curr_covered_or_not = np.zeros(X.shape[0], dtype=np.bool)
+    # for r in solution:
+    #     curr_covered_or_not |= r.evaluate_data(X)
+    curr_covered_or_not = np.logical_or.reduce( [r.evaluate_data(X) for r in solution] )
     corret_or_not = np.equal(Y,target_class_idx)
     return np.where(corret_or_not != curr_covered_or_not)[0]
 
 def get_correct_cover_ruleset(solution,X,Y,target_class_idx=1):
-    curr_covered_or_not = np.zeros(X.shape[0], dtype=np.bool)
-    for r in solution:
-        curr_covered_or_not |= r.evaluate_data(X)
+    # curr_covered_or_not = np.zeros(X.shape[0], dtype=np.bool)
+    # for r in solution:
+    #     curr_covered_or_not |= r.evaluate_data(X)
+    curr_covered_or_not = np.logical_or.reduce( [r.evaluate_data(X) for r in solution] )
     corret_or_not = np.equal(Y,target_class_idx)
     return np.where(corret_or_not == curr_covered_or_not)[0]
 
