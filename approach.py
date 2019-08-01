@@ -11,8 +11,8 @@ import Orange
 from model import ADS_Learner
 from core import best_and_second_best_action
 
-# from tqdm import tqdm_notebook as tqdm
-from tqdm import tqdm
+from tqdm import tqdm_notebook as tqdm
+# from tqdm import tqdm
 import logging
 import time
 import os
@@ -51,6 +51,8 @@ def explain_tabular(dataset,blackbox, target_class_idx=1, pre_label=True, random
     logging.info('construct the object')
     target_class = dataset.domain.class_var.values[target_class_idx]
     explainer = ADS_Learner(dataset, blackbox, target_class=target_class) # fit the explainer to the data
+    # todo: remove this
+    explainer.tmp_time = 0
     logging.info('object construct okay')
 
     print("new cached!")
@@ -69,18 +71,19 @@ def explain_tabular(dataset,blackbox, target_class_idx=1, pre_label=True, random
     logging.info('Begin the outer loop')
     for iter_number in tqdm(range(explainer.N_iter_max)):
     # for iter_number in range(explainer.N_iter_max):
-        start_time = time.time()
         try:
             actions = explainer.generate_action_space() # generating possible actions
         except Exception as e:
             error_log_list.append((iter_number,e))
             continue
         # actions = explainer.generate_action_space() # generating possible actions
+
         logging.debug("action genearting okay")
         logging.debug("finding best and second best")
         a_star,a_prime = best_and_second_best_action(actions)
         logging.debug("finding best and second best okay")
 
+        # start_time = time.time()
         tmp_count = 0
         if a_prime is None:
             explainer.update_best_solution(a_star) # update best solution
@@ -89,7 +92,7 @@ def explain_tabular(dataset,blackbox, target_class_idx=1, pre_label=True, random
             del actions
             continue
 
-        # while(a_prime.upper() > a_star.lower()+0.001 ) :
+        # while(a_prime.upper() > a_star.lower() ) :
         while(a_prime.upper() > a_star.lower()+0.0001 ) :
             if a_prime == a_star:
                 print("dupppp")
@@ -98,20 +101,24 @@ def explain_tabular(dataset,blackbox, target_class_idx=1, pre_label=True, random
             X_new,Y_new = explainer.generate_synthetic_instances(a_star,a_prime)
             solutions =  explainer.update_actions(actions,a_star,a_prime,X_new,Y_new)
             a_star,a_prime = best_and_second_best_action(actions)
-            if a_prime is None:
-                break
             tmp_count+=1
             if tmp_count >= 100:
                 break
+            if a_prime is None:
+                break
         if tmp_count != 0:
             logging.info("generating new instance for a batch : "+str(tmp_count))
-            print("generating new instance for a batch : ",str(tmp_count))
+            # print("generating new instance for a batch : ",str(tmp_count),"action mode",a_star.mode)
+            # print(explainer.synthetic_data_table[-2*(tmp_count):])
 
         explainer.update_best_solution(a_star) # update best solution
         explainer.update_current_solution(a_star,actions) #take the greedy or take random
         explainer.update() # count += 1
         del actions
+        # print("finding best solution",time.time()-start_time)
         # print ('\tTook %0.3fs to generate for mode %s ' %( (time.time() - start_time ),a_star.mode)  )
+        # print ('\tTook %0.3fs for finding best actions for mode %s ' %( (time.time() - start_time ),a_star.mode)  )
+        # quit()
 
     rule_set = explainer.output()
     # print("the result accuracy",explainer.compute_accuracy(rule_set))

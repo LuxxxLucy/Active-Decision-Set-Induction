@@ -2,18 +2,44 @@
 import numpy as np
 import heapq
 import math
-import random
 from copy import deepcopy
 import time
+import random
+random.seed(42)
 # import local function
 # from objective import objective
 
-from sklearn.neighbors import KDTree
+import warnings
+warnings.filterwarnings("ignore")
+
 import sklearn
 from sklearn.metrics.pairwise import euclidean_distances as distance_function
+from sklearn.compose import make_column_transformer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder,Normalizer
 
-from sklearn.gaussian_process import GaussianProcessRegressor
+from Orange.data import Table
+from Orange.distance import Euclidean
 
+import sys
+this = sys.modules[__name__]
+# this.distance_model = None
+this.transformer = None
+
+def core_init(seed,data_table):
+    random.seed(seed)
+    np.random.seed(seed)
+    # this.distance_model = Euclidean(normalize=True).fit(data_table)
+    print("init transformer okay!")
+    domain = data_table.domain
+    categorical_features_idx = [i for i,a in enumerate(domain.attributes) if a.is_discrete]
+    continuous_features_idx = [i for i,a in enumerate(domain.attributes) if a.is_continuous]
+    this.transformer = make_column_transformer( ( OneHotEncoder(categories='auto',sparse=False),categorical_features_idx),
+    (StandardScaler(), continuous_features_idx),
+                        remainder='passthrough'
+                        )
+    this.transformer.fit( data_table.X )
+    # self.transformer = lambda x : self.preprocessor.transform(x).toarray()
+    return
 
 def simple_objective(solution,X,Y,lambda_parameter=0.01,target_class_idx=1):
     #
@@ -49,7 +75,7 @@ def extend_rule(rule,domain):
             if attribute.is_discrete:
                 new_condition = Condition(column=attri_col,values= [ i for i in range(len(attribute.values)) ],type='categorical')
             else:
-                new_condition = Condition(column=attri_col,max_value=attribute.max,min_value=attribute.min,type='continuous')
+                new_condition = Condition(column=attri_col,max_value=attribute.max,min_value=attribute.min,type='continuous',domain=domain)
             tmp_rule.conditions.append(new_condition)
     tmp_rule.conditions = sorted(tmp_rule.conditions,key=lambda x:x.column )
     return tmp_rule
@@ -57,14 +83,14 @@ def extend_rule(rule,domain):
 def uniform_sampling(rule_to_uniform_sample,population_size=1000):
     ''' uniform sampling. used as the basic procedure'''
     raw_X_columns = [ s.sample(batch_size=population_size) for s in rule_to_uniform_sample.conditions]
-    raw_X = np.column_stack(raw_X_columns).tolist()
+    raw_X = np.column_stack(raw_X_columns)
     return raw_X
 
-def sample_new_instances(region_1,region_2,X,Y,domain,blackbox,batch_size=1,population_size = 1000,transformer=None):
+def sample_new_instances(a_star,a_prime,X,Y,domain,blackbox,batch_size=1,population_size = 100):
 
     # TODO: now these two regions are only two rules
 
-    def sample_new_for_one_rule(rule,previous_X,previous_Y):
+    def sample_new_for_one_rule(rule,region,previous_X,previous_Y):
         ''' the true sampling procedure
             1. we first extend the specfic region we wish to sampling
                     in order to sample, first extend the rule
@@ -73,70 +99,58 @@ def sample_new_instances(region_1,region_2,X,Y,domain,blackbox,batch_size=1,popu
                     in other words, the un-specified conditions are made to be specific
             2. then we sample one new synthetic at a time and we do it for `batch_size` times
         '''
-        tmp_rule = extend_rule(rule,domain)
-        # tmp_rule = rule
-
         synthetic_rows = []
         synthetic_rows_y = []
 
-        population = uniform_sampling(tmp_rule,population_size=population_size)
+        # tmp_rule = extend_rule(rule,domain)
+        tmp_rule = region
 
         curr_covered_or_not = np.zeros(previous_X.shape[0], dtype=np.bool)
         curr_covered_or_not |= tmp_rule.evaluate_data(previous_X)
         covered_indices = np.where(curr_covered_or_not == True)[0]
+        uncovered_indices = np.where(curr_covered_or_not == False)[0]
+        population = uniform_sampling(tmp_rule,population_size=population_size)
 
-        if covered_indices.shape[0] == 0:
+        if covered_indices.shape[0] == 0 or uncovered_indices.shape[0] == 0:
             '''
-            if in this rule there is no instance (which indicates a large upper bound)
+            if in this rule there is no instance (which indicates a large upper bound) or it covers all. (Strange and extreme case)
             '''
-            # print("special case!!!")
-            # from utils import rule_to_string
-            # print(rule_to_string(rule,domain=domain,target_class_idx=1))
-            # print(rule_to_string(tmp_rule,domain=domain,target_class_idx=1))
             synthetic_instances = population[:batch_size]
             synthetic_instances_y = blackbox(synthetic_instances)
             return synthetic_instances,synthetic_instances_y
 
-        # todo remove visualization
-        # import matplotlib.pyplot as plt
-        # import numpy as np
-        # previous_X_copy = [previous_X[i] for i in covered_indices ]
-        # previous_Y_copy = [previous_Y[i] for i in covered_indices]
-        # population = uniform_sampling(tmp_rule)
-        # previous_X_copy = np.asarray(previous_X_copy)
-        # population_np = np.asarray(population)
-        # # previous_Y_copy = np.asarray(previous_Y_copy)
-        # fig, ax = plt.subplots()
-        # plt.ylim((0,2))
-        # plt.xlim((0,1))
-        #
-        # ax.scatter(previous_X_copy[:,0], previous_X_copy[:,1],c=previous_Y_copy, alpha=0.5)
-        # # ax.scatter(population_np[:,0], population_np[:,1], alpha=0.5)
-        # # visualize the rule
-        # xx, yy = np.meshgrid(np.linspace(0, 1, 100), np.linspace(0, 2, 100))
-        # output_rule = tmp_rule
-        # # Z = predict_by_rule(df_instances, output_rule)
-        # Z =  output_rule.evaluate_data(np.c_[xx.ravel(), yy.ravel()])
-        #
-        # Z = Z.reshape(xx.shape).astype(int)
-        # CS2 = ax.contour(xx, yy, Z, cmap=plt.cm.Blues)
-        # plt.show()
 
+        specified_columns = [c.column for c in rule.conditions]
+        # todo: ugly code change it!
+        unspecified_columns = [c.column for c in extend_rule(rule,domain).conditions if c.column not in specified_columns ]
+        # mask_data = population[0,unspecified_columns]
+        # mask_data_idx = random.choice(uncovered_indices.tolist())
+        mask_data_idx = np.random.choice(uncovered_indices, population_size,replace=True )
+        # mask_data = previous_X[mask_data_idx,unspecified_columns]
+        # population[:,unspecified_columns] = mask_data
+        t = previous_X[mask_data_idx]
+        population[:,unspecified_columns] =t[:,unspecified_columns]
+
+        population = population.tolist()
         previous_X_copy = [previous_X[i] for i in covered_indices ]
         previous_Y_copy = [previous_Y[i] for i in covered_indices]
 
         for _ in range(batch_size):
-            # compute the best idx
-            # TODO: using more quick K-nearest neighbour
-            # a list of pairs in the form of (index, distance to its nearest neighbour)
-            # knn = KDTree(,metric='euclidean')
-            # K = min(30,covered_indices.shape[0])
-            # distances,indices = knn.query(, k=K)
-            # distances = [ d.tolist() for d in distances]
-            # indices = [idx.tolist() for idx in indices ]
 
-            tmp = distance_function(transformer(np.asarray(population)), transformer(np.asarray(previous_X_copy)))
+            # transformed_population = np.asarray(population).astype(float)
+            # transformed_previous_X_copy = np.asarray(previous_X_copy).astype(float)
+            # # print(transformed_population.shape)
+            # transformed_population = Table.from_numpy(domain,X=np.asarray(population),Y=np.zeros(len(population), dtype=np.bool))
+            # transformed_previous_X_copy = Table.from_numpy(domain,X=np.asarray(previous_X_copy).astype(float),Y=np.zeros(len(previous_X_copy), dtype=np.bool))
+
+            transformed_population = this.transformer.transform( np.asarray(population).astype(float) )
+            transformed_previous_X_copy = this.transformer.transform( np.asarray(previous_X_copy).astype(float) )
+            tmp = distance_function(transformed_population,transformed_previous_X_copy )
+            # tmp = this.distance_model(e1=transformed_population, e2=transformed_previous_X_copy)
+            # tmp = this.distance_model.compute_distances(transformed_population,transformed_previous_X_copy)
+
             nearest_distances = np.amin(tmp, axis=1).tolist()
+
 
             idx_to_add = max([ (i,d) for i,d in enumerate(nearest_distances)], key = lambda x: sampling_criteria(x[1]) )[0]
             # TODO: change this
@@ -145,47 +159,27 @@ def sample_new_instances(region_1,region_2,X,Y,domain,blackbox,batch_size=1,popu
             previous_X_copy.append(population[idx_to_add])
             synthetic_rows_y.append(blackbox([population[idx_to_add]])[0])
             previous_Y_copy.append(blackbox([population[idx_to_add]])[0])
+
             del population[idx_to_add]
 
-        # previous_X_copy_np = np.asarray(previous_X_copy)
-        # synthetic_rows_np = np.asarray(synthetic_rows)
-        # print("#new instances",synthetic_rows_np.shape)
-        # previous_Y_copy = np.asarray(previous_Y_copy)
-        # import matplotlib.pyplot as plt
-        # import numpy as np
-        # fig, ax = plt.subplots()
-        # plt.ylim((0,2))
-        # plt.xlim((0,1))
-        #
-        # ax.scatter(previous_X_copy_np[:,0], previous_X_copy_np[:,1], c=previous_Y_copy , alpha=0.1)
-        # ax.scatter(synthetic_rows_np[:,0], synthetic_rows_np[:,1],c=synthetic_rows_y,marker='*',alpha=1)
-        # # visualize the rule
-        # xx, yy = np.meshgrid(np.linspace(0, 1, 100), np.linspace(0, 2, 100))
-        # output_rule = tmp_rule
-        # # Z = predict_by_rule(df_instances, output_rule)
-        # Z =  output_rule.evaluate_data(np.c_[xx.ravel(), yy.ravel()])
-        #
-        # Z = Z.reshape(xx.shape).astype(int)
-        # CS2 = ax.contour(xx, yy, Z, cmap=plt.cm.Blues)
-        # plt.show()
-        # quit()
 
         del previous_X_copy
         synthetic_instances = np.row_stack(synthetic_rows)
 
         synthetic_instances_y = np.row_stack(synthetic_rows_y).reshape((-1))
 
-
         return synthetic_instances,synthetic_instances_y
 
+    region_1,region_2 = get_symmetric_difference(a_star,a_prime,domain)
     if region_1 is None or region_2 is None:
         print("strange! there is a none region")
-    new_X_1,new_Y_1 = sample_new_for_one_rule(region_1,X,Y)
-    X_new = np.concatenate((new_X_1,X) )
-    Y_new = np.concatenate((new_Y_1,Y) )
-    new_X_2,new_Y_2 = sample_new_for_one_rule(region_2,X_new,Y_new)
-    return np.concatenate((new_X_1, new_X_2)),np.concatenate((new_Y_1, new_Y_2))
+    new_X_1,new_Y_1 = sample_new_for_one_rule(a_star.changed_rule,region_1,X,Y)
+    X_new = np.concatenate((X,new_X_1) )
+    Y_new = np.concatenate((Y,new_Y_1) )
+    new_X_2,new_Y_2 = sample_new_for_one_rule(a_prime.changed_rule,region_2,X_new,Y_new)
+    result = np.concatenate((new_X_1, new_X_2)),np.concatenate((new_Y_1, new_Y_2))
 
+    return result
 
 def get_symmetric_difference(a_1,a_2,domain):
     '''
@@ -202,9 +196,14 @@ def get_symmetric_difference(a_1,a_2,domain):
     #     region_2 = a_2.current_solution[a_2.remove_rule_idx]
     # else:
     #     region_2 = a_2.new_solution[-1]
-    region_1 = a_1.changed_rule
-    region_2 = a_2.changed_rule
-    from utils import rule_to_string
+    tmp_rule_1 = extend_rule(a_1.changed_rule,domain)
+    tmp_rule_2 = extend_rule(a_2.changed_rule,domain)
+
+    # region_1 = tmp_rule_1 - tmp_rule_2
+    # region_2 = tmp_rule_2 - tmp_rule_1
+    region_1 = tmp_rule_1
+    region_2 = tmp_rule_2
+    # from utils import rule_to_string
     # print(rule_to_string(a_1.changed_rule,domain=domain,target_class_idx=1))
     # print(rule_to_string(a_2.changed_rule,domain=domain,target_class_idx=1))
     # print(rule_to_string(tmp_rule_1,domain=domain,target_class_idx=1))

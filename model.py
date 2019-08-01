@@ -19,7 +19,7 @@ import math
 # import local package
 from structure import Decision_Set_Learner,Rule,deepcopy_decision_set
 from utils import rule_to_string
-from core import simple_objective,get_correct_cover_ruleset,get_symmetric_difference,sample_new_instances
+from core import simple_objective,get_correct_cover_ruleset,get_symmetric_difference,sample_new_instances,core_init
 
 class ADS_Learner(Decision_Set_Learner):
     '''
@@ -27,6 +27,7 @@ class ADS_Learner(Decision_Set_Learner):
     '''
     def __init__(self,data_table, blackbox,target_class='yes',seed=42):
         random.seed(seed)
+        core_init(seed,data_table)
         super().__init__(data_table,target_class,seed=42)
         self.data_table = data_table
         self.domain = data_table.domain
@@ -44,16 +45,16 @@ class ADS_Learner(Decision_Set_Learner):
         self.target_class_idx = self.data_table.domain.class_var.values.index(self.target_class)
 
         self.count=0
-        categorical_features_idx = [i for i,a in enumerate(data_table.domain.attributes) if a.is_discrete]
-        continuous_features_idx = [i for i,a in enumerate(data_table.domain.attributes) if a.is_continuous]
-
-        self.preprocessor = make_column_transformer( ( OneHotEncoder(categories='auto',sparse=False),categorical_features_idx),
-        (StandardScaler(), continuous_features_idx),
-                            remainder = 'passthrough'
-                            )
-        self.preprocessor.fit(data_table.X)
-        # self.transformer = lambda x : self.preprocessor.transform(x).toarray()
-        self.transformer = lambda x : self.preprocessor.transform(x)
+        # categorical_features_idx = [i for i,a in enumerate(data_table.domain.attributes) if a.is_discrete]
+        # continuous_features_idx = [i for i,a in enumerate(data_table.domain.attributes) if a.is_continuous]
+        #
+        # self.preprocessor = make_column_transformer( ( OneHotEncoder(categories='auto',sparse=False),categorical_features_idx),
+        # (StandardScaler(), continuous_features_idx),
+        #                     remainder = 'passthrough'
+        #                     )
+        # self.preprocessor.fit(data_table.X)
+        # # self.transformer = lambda x : self.preprocessor.transform(x).toarray()
+        # self.transformer = lambda x : self.preprocessor.transform(x)
 
         self.solution_history=[]
 
@@ -67,13 +68,13 @@ class ADS_Learner(Decision_Set_Learner):
 
     def set_parameters(self,beta,lambda_parameter):
         self.N_iter_max = 1000
-        # self.N_iter_max = 200
+        # self.N_iter_max = 5
         self.lambda_parameter = lambda_parameter
         self.beta = beta
 
         self.N_batch = 10
         self.epsilon = 0.01
-        self.supp=0.05
+        # self.supp=0.05
         self.supp=0.01
 
         # print("target class is:",self.target_class,". Its index is",self.target_class_idx)
@@ -99,6 +100,7 @@ class ADS_Learner(Decision_Set_Learner):
         logging.info("initialization okay")
 
 
+
     def termination_condition(self):
         if self.termination == True:
             return True
@@ -111,9 +113,7 @@ class ADS_Learner(Decision_Set_Learner):
         self.best_obj = simple_objective(self.best_solution,self.total_X,self.total_Y,lambda_parameter=self.lambda_parameter,target_class_idx=self.target_class_idx)
 
         if self.best_obj < best_action.empirical_obj:
-            # print("best obj",self.best_obj," -> new obj",best_action.obj_estimation(),"number of rules",len(best_action.new_solution))
             self.best_obj = best_action.empirical_obj
-            # self.best_solution = [ Rule(conditions=[deepcopy(c) for c in r.conditions],domain=domain,target_class_idx=target_class_idx) for r in best_action.new_solution];
             self.best_solution = deepcopy_decision_set(best_action.new_solution);
 
             # todo: add obj update in the tqdm log
@@ -141,66 +141,21 @@ class ADS_Learner(Decision_Set_Learner):
                 # todo explain here.
                 print("hopeless, at iter",self.count,"mode",a.mode)
                 return
-
-        # # T = self.T_0**(1 - self.count/self.N_iter_max)
-        # T = self.T_0* (1- self.count /self.N_iter_max)
-        # # prob = min(1, np.exp( (a.obj_estimation()- self.current_obj) / T)  )
-        # prob = min(1, np.exp( (a.obj_estimation()) / T)  )
-        # # print(prob)
-        # if np.random.random() <= prob:
-        #     self.current_solution = a.new_solution
-        #     self.current_solution = list(set(self.current_solution))
-        #     # self.current_obj = deepcopy(a.empirical_obj)
-        #     self.current_obj = a.obj_estimation()
-        # else:
-        #     print("rejected!",prob)
-
-        # print("mode",self.mode)
-        # print("changed rule",a.changed_rule.string_representation)
-        # print("before updated set")
-        # for e in self.current_solution:
-        #     print(e.string_representation)
-        # print("before updated set of actions")
-        # for e in a.current_solution:
-        #     print(e.string_representation)
-        # print("after updated set")
-        # for e in a.new_solution:
-        #     print(e.string_representation)
-
         self.current_solution = a.new_solution
         # todo: better solution than this, why could this happen?
         self.current_solution = sorted(set(self.current_solution),key=lambda x:x.string_representation)
         # self.current_obj = deepcopy(a.empirical_obj)
         self.current_obj = a.obj_estimation()
-
-
-
-
-
         return
 
     def generate_action_space(self):
-        import time
-        start_time = time.time()
-        # end_time = time.time()
-        actions = self.generate_action(self.total_X,self.total_Y,beta=self.beta,rho=self.rho,transformer=self.transformer)
-        # print ('at iter %s \tTook %0.3fs  mode %s total %s actions current rule number %s' % ( str(self.count),time.time() - start_time, actions[0].mode, str(len(actions)),str(len(self.current_solution)) ) )
+        actions = self.generate_action(self.total_X,self.total_Y,beta=self.beta,rho=self.rho)
 
-        # print(len(actions))
-        # from utils import rule_to_string
-        # for a in actions:
-        #     for r in a.new_solution:
-        #         print(rule_to_string(r,domain=dataset.domain,target_class_idx=1))
-        #     print("---")
-        #
-        # quit()
 
         return actions
 
     def generate_synthetic_instances(self,a_star,a_prime):
-        region_1,region_2 = get_symmetric_difference(a_star,a_prime,self.domain)
-        # print(a_star.mode,a_prime.mode)
-        X_new,Y_new = sample_new_instances(region_1,region_2,self.total_X,self.total_Y,self.domain,self.blackbox,transformer=self.transformer)
+        X_new,Y_new = sample_new_instances(a_star,a_prime,self.total_X,self.total_Y,self.domain,self.blackbox)
         return X_new,Y_new
 
     def update_actions(self,actions,a_star,a_prime,X_new,Y_new):
@@ -214,7 +169,7 @@ class ADS_Learner(Decision_Set_Learner):
         self.current_obj =  simple_objective(self.current_solution,self.total_X,self.total_Y,lambda_parameter=self.lambda_parameter,target_class_idx=self.target_class_idx)
         for a in actions:
             a.update_current_obj(self.current_obj)
-            a.update_objective(self.total_X,self.total_Y,self.domain,target_class_idx=self.target_class_idx,transformer=self.transformer)
+            a.update_objective(self.total_X,self.total_Y,self.domain,target_class_idx=self.target_class_idx)
         return actions
 
 
@@ -224,12 +179,14 @@ class ADS_Learner(Decision_Set_Learner):
 
 
     def output_the_best(self,lambda_parameter=0.001):
-        best_solution = max( self.solution_history,key=lambda x: simple_objective(x,self.total_X,self.total_Y,lambda_parameter=lambda_parameter,target_class_idx=self.target_class_idx) )
+        index,best_solution = max( enumerate(self.solution_history),key=lambda x: simple_objective(x[1],self.total_X,self.total_Y,lambda_parameter=lambda_parameter,target_class_idx=self.target_class_idx) )
 
+        print("best solution found in iteration",index)
         return best_solution
 
     def output(self):
         result =  self.output_the_best(lambda_parameter=self.lambda_parameter)
+        # self.finish()
         return sorted(result,key=lambda x:x.string_representation)
         # return self.best_solution
 

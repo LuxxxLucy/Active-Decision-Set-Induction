@@ -17,7 +17,7 @@ from sklearn.model_selection import train_test_split
 
 
 
-def train_test_split_data(data_table,test_size=0.33):
+def train_test_split_data(data_table,test_size=0.1):
     X_train,X_test,y_train,y_test = train_test_split(data_table.X,data_table.Y,test_size=test_size,random_state=42)
 
 
@@ -27,7 +27,7 @@ def train_test_split_data(data_table,test_size=0.33):
 
     return train_data_table,test_data_table
 
-def prepare_2d_sinusoidal_dataset(number=200):
+def prepare_2d_sinusoidal_dataset(number=150):
     np.random.seed(42)
     random.seed(42)
     def myfunc(x,y):
@@ -136,7 +136,7 @@ def prepare_german_dataset(filename="german_credit.csv", path_data="./datasets/g
     return train_table,test_table
 
 
-def prepare_adult_dataset(filename="adult.csv", path_data="./datasets/adult/"):
+def prepare_adult_dataset(filename="adult_2.csv", path_data="./datasets/adult/"):
 
     np.random.seed(42)
     # Read Dataset
@@ -144,7 +144,8 @@ def prepare_adult_dataset(filename="adult.csv", path_data="./datasets/adult/"):
 
     # Remove useless columns
     del df['fnlwgt']
-    del df['education-num']
+    # del df['education-num']
+    del df['educational-num']
 
     # Remove Missing Values
 

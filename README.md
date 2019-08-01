@@ -20,13 +20,13 @@ For compared methods (baselines) : in order to reproduce the experiments, you ne
 * __lime__: this is the dependency for one baseline method (the Anchor algorithm). run `conda install -c conda-forge lime`
 For handling text data:
 * __spacy__: this is used for processing text data.  
+* __pysbrl__ and __pyfim__: for scalable Bayesian rule list.
 
 ## Input
 ---
 There is a simple tutorial in `2-d.ipynb` that demonstrate how to prepare the input in the right format in a simple setting: a 2-d dataset and a blackbox function.
 In particular, you will need to set these inputs right:
-* a classifier model: the blackbox model should be a scikit-learn classifier. And you pass into the algorithm with its `predict` function. For example if `c` is a random forest classifier, you feed as input `c.predict`
-* a data encoder: more specifically a scikit column transformer to encode raw data into classifier-readable data (for example, converting categorical data into one-hot-code). Please refer to scikit documentation on ColumnTransformer. And you pass into the algorithm with is `transform` function. For example if `e` is a scikit encoder, you feed as input `e.transform`
+* a classifier model: the blackbox model should be a scikit-learn classifier. And you pass into the algorithm with its `predict` function. For example if `c` is a random forest classifier, you feed as input `c.predict` (note that the data encoder should also be included in this predict function such that the blackbox predict function could operate on raw data.)
 * the dataset: for tabular data, the Orange Table is the data structure we'll be working on. It has several very nice properties compared with Pandas dataframe or scikit-learn dictionary-like 'bunch' object. And that is the concept of "domain". Basically, the types of features ("categorical", etc) are explicitly defined in the Orange data table. It avoids the tedious and strange use of scikit "bunch" object.
 
 ## Some notes for the competition methods.
@@ -36,9 +36,9 @@ Most of these baselines are adopted from the original code. A lot of efforts are
 Passive approaches:
 
 1. __Interpretable decision set__ (TODO)
-2. __BETA__ (TODO)
+2. __MUSE__ (TODO)
 3. __Bayesian decision set__ in `BRS.py`: adopted from the original code. fixes some bugs and compatibility issues.
-4. __Scalable Bayesian Decision List__. first you need `R` and install `sbrl` in `R`. Then for python warpper, change directory to `/SBRL` in the baseline directory. run `pip install numpy pandas tzlocal;pip install rpy2; pip install -e .`
+4. __Scalable Bayesian Decision List__. install `pysbrl`
 5. __RuleMatrix__ (sampling+SBDL)
 6. __CN2__ and __CN2SD__ in `cn2.py`: the famous CN2 sequential-covering algorithm. The CN2SD is a very useful variant (CN2 for subgroup discovery).
 
