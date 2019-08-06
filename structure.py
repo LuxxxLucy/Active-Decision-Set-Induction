@@ -21,7 +21,7 @@ from Orange.data import Table
 # todo:remove associate rule
 # from orangecontrib.associate.fpgrowth import frequent_itemsets, OneHot
 
-from core import simple_objective, get_incorrect_cover_ruleset,get_recall
+from core import simple_objective, get_incorrect_cover_ruleset
 from utils import rule_to_string
 
 import logging
@@ -554,7 +554,6 @@ class Decision_Set_Learner():
 
     def generate_action(self,X,Y,beta=1000,rho=None):
         incorrect_instances = get_incorrect_cover_ruleset(self.current_solution,self.total_X,self.total_Y,target_class_idx=self.target_class_idx)
-        # recall = get_recall(self.current_solution,self.total_X,self.total_Y,target_class_idx=self.target_class_idx)
         if len(incorrect_instances) != 0:
             anchor_instance = random.choice(incorrect_instances)
             N = len(self.current_solution)
@@ -619,7 +618,8 @@ class Decision_Set_Learner():
                     rule_new = rule.remove_condition(condition_idx,self.domain)
                     if len(rule_new.conditions) == 0:
                         # which means there is only one condition in this rule, remove this condition means to remove the entire rule
-                        action = Action(self.current_solution,('REMOVE_RULE',rule_idx),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,lambda_parameter=self.lambda_parameter,rho=rho)
+                        # action = Action(self.current_solution,('REMOVE_RULE',rule_idx),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,lambda_parameter=self.lambda_parameter,rho=rho)
+                        continue
                     else:
                         action = Action(self.current_solution,('REMOVE_CONDITION',rule,rule_idx,rule_new),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,lambda_parameter=self.lambda_parameter,rho=rho)
                     actions.append(action)
@@ -709,18 +709,7 @@ class Decision_Set_Learner():
 
         actions = sorted(set(actions),key=lambda x:x.string_representation)
 
-        # if self.count in [7,8,9,10,11]:
-        #     print ('iter %s anchor id %s mode %s total %s actions #number %s  ' % ( str(self.count),str(anchor_instance), actions[0].mode, str(len(actions)),str(len(self.current_solution)) ) )
-        #     print("current set")
-        #     strings = [e.string_representation for e in self.current_solution]
-        #     for t in sorted(strings):
-        #         print(t)
-        #     print(actions)
-        #     if len(actions) !=0:
-        #         for a in actions:
-        #             print(a.changed_rule.string_representation)
-        #             # print(rule_to_string(a.changed_rule,domain=self.domain,target_class_idx=1))
-
+        assert len(set([a.mode for a in actions])) == 1, "error!!"
         return actions
 
     def new_rule_generating(self,beam_size=10):
@@ -1067,9 +1056,6 @@ class Action():
         update objective. and update the confidence interval
         '''
         self.empirical_obj = simple_objective(self.new_solution,X,Y,lambda_parameter=self.lambda_parameter,target_class_idx=target_class_idx)
-        # self.current_obj = simple_objective(self.current_solution,X,Y,lambda_parameter=self.lambda_parameter,target_class_idx=target_class_idx)
-        # if self.mode != 'REMOVE_RULE' and self.obj_estimation()<=0:
-        #     self.make_hopeless()
 
         if self.beta == 0:
             self.beta_interval=0

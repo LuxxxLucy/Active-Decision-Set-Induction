@@ -35,14 +35,22 @@ def explain_tabular(dataset, blackbox, target_class_idx=1, pre_label=True, rando
     # disc = Orange.preprocess.Discretize()
     # disc.method = Orange.preprocess.discretize.EntropyMDL()
     # disc_dataset = disc(tmp_table)
-    # explainer = BayesianRuleList(lambda_=100,eta=4)
     disc_dataset = dataset
     explainer = BayesianRuleList()
+    # explainer = BayesianRuleList(lambda_=100)
+    # explainer = BayesianRuleList(lambda_=40,eta=4)
     print("initialize okay")
     print("start finding rule list")
-    rule_set = explainer.fit((disc_dataset.X).astype(int),(disc_dataset.Y==target_class_idx).astype(int) )
+    rule_list = explainer.fit((disc_dataset.X).astype(int),(disc_dataset.Y==target_class_idx).astype(int) )
     print("finished finding rule list")
 
     # convert the rule representation
-    # rule_set = explainer.rules_convert(rule_set,dataset.domain)
+    # rule_list = explainer.rules_convert(rule_list,dataset.domain)
     return explainer
+
+def compute_metrics_sbrl(sbrl_rule_list):
+    print("number of rules",len(sbrl_rule_list))
+    print("ave number of conditions" , sum([ len(r[0]) for r in sbrl_rule_list]) / len(sbrl_rule_list) )
+    print("max number of conditions" , max([ len(r[0]) for r in sbrl_rule_list]) )
+    print("used features", len(set(  [ c.feature_idx for r in sbrl_rule_list for c in r[0]]  ) )  )
+    return

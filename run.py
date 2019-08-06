@@ -5,6 +5,8 @@ import sklearn
 from sklearn.metrics import accuracy_score,f1_score,precision_score,recall_score
 
 from prepare_dataset import prepare_adult_dataset,prepare_compas_dataset,prepare_pima_dataset
+from prepare_blackbox import train_classifier
+
 from utils import encoder_from_datatable,ruleset_predict,rule_to_string,label_with_blackbox
 
 from approach import explain_tabular
@@ -16,9 +18,15 @@ from sklearn.metrics import accuracy_score,f1_score,precision_score,recall_score
 if __name__ == '__main__':
     random_seed=42
     np.random.seed(random_seed)
-    # data_table,test_data_table = prepare_compas_dataset()
+    data_table,test_data_table = prepare_compas_dataset()
     # data_table,test_data_table = prepare_pima_dataset()
-    data_table,test_data_table = prepare_adult_dataset()
+    # data_table,test_data_table = prepare_adult_dataset()
+
+    black_box_model = train_classifier(data_table,classifier_method='rf',random_seed=random_seed)
+    # black_box_model = train_classifier(data_table,classifier_method='dnn',random_seed=random_seed)
+
+
+    black_box = lambda x: black_box_model.predict(x)
 
 
     print('Train acc', accuracy_score(data_table.Y, black_box(data_table.X)))
@@ -35,8 +43,10 @@ if __name__ == '__main__':
 
     predicted_data_table = label_with_blackbox(data_table,black_box)
     predicted_test_data_table = label_with_blackbox(test_data_table,black_box)
-    beta = 0.0001
     beta = 0
+    beta = 0.00001
+    beta = 0.0001
+
     lambda_parameter = 0.0001
     explanations,ADS = explain_tabular(predicted_data_table,  black_box, target_class_idx=1, random_seed=42,beta=beta,lambda_parameter= lambda_parameter)
 

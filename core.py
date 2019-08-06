@@ -151,7 +151,6 @@ def sample_new_instances(a_star,a_prime,X,Y,domain,blackbox,batch_size=1,populat
 
             nearest_distances = np.amin(tmp, axis=1).tolist()
 
-
             idx_to_add = max([ (i,d) for i,d in enumerate(nearest_distances)], key = lambda x: sampling_criteria(x[1]) )[0]
             # TODO: change this
 

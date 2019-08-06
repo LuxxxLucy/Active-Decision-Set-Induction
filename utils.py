@@ -4,6 +4,15 @@ def label_with_blackbox(data_table,blackbox):
     from Orange.data import Table
     return Table.from_numpy(X=data_table.X,Y=blackbox(data_table.X),domain=data_table.domain)
 
+def compute_metrics(rules,domain):
+    '''compute various metrics for rules'''
+
+    print("number of rules",len(rules))
+    print("ave number of conditions" , sum([ len(r.conditions) for r in rules]) / len(rules) )
+    print("max number of conditions" , max([ len(r.conditions) for r in rules]) )
+    print("used features", len(set(  [ c.column for r in rules for c in r.conditions]  ) )  )
+
+
 def ruleset_predict(ruleset,X):
     # curr_covered_or_not = np.zeros(X.shape[0], dtype=np.bool)
     # for r in ruleset:
@@ -142,7 +151,7 @@ def uniform_enlarge_dataset(data_table,black_box,sampling_rate=1,random_seed=42)
 
     from Orange.data import Table
     if sampling_rate == 0:
-        print("sampling rate zero")
+        # print("sampling rate zero")
         return Table.from_numpy(data_table.domain,X=data_table.X,Y=data_table.Y)
 
     from core import extend_rule,uniform_sampling,core_init
@@ -177,7 +186,7 @@ def estimated_enlarge_dataset(data_table,black_box,sampling_rate=1,random_seed=4
     '''
     from Orange.data import Table
     if sampling_rate == 0:
-        print("sampling rate zero: estimated")
+        # print("sampling rate zero: estimated")
         return Table.from_numpy(data_table.domain,X=data_table.X,Y=data_table.Y)
 
     from core import extend_rule,uniform_sampling
