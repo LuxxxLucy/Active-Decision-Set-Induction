@@ -11,13 +11,13 @@ import Orange
 from model import ADS_Learner
 from core import best_and_second_best_action
 
-from tqdm import tqdm_notebook as tqdm
-# from tqdm import tqdm
+# from tqdm import tqdm_notebook as tqdm
+from tqdm import tqdm
 import logging
 import time
 import os
 
-def explain_tabular(dataset,blackbox, target_class_idx=1, pre_label=True, random_seed=42,beta=1,lambda_parameter=0.01):
+def explain_tabular(dataset,blackbox, target_class_idx=1, pre_label=True, random_seed=42,beta=1,lambda_parameter=0.01,use_pre_mined = False, objective = 'simple'):
     '''
     Input Params:
     1. dataset: a Orange data table
@@ -50,7 +50,7 @@ def explain_tabular(dataset,blackbox, target_class_idx=1, pre_label=True, random
     # initialize with the true data instances
     logging.info('construct the object')
     target_class = dataset.domain.class_var.values[target_class_idx]
-    explainer = ADS_Learner(dataset, blackbox, target_class=target_class) # fit the explainer to the data
+    explainer = ADS_Learner(dataset, blackbox, target_class=target_class,use_pre_mined=use_pre_mined,objective=objective) # fit the explainer to the data
     # todo: remove this
     explainer.tmp_time = 0
     logging.info('object construct okay')

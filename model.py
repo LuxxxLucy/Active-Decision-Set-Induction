@@ -25,7 +25,7 @@ class ADS_Learner(Decision_Set_Learner):
     '''
     The Active Decision Set model
     '''
-    def __init__(self,data_table, blackbox,target_class='yes',seed=42):
+    def __init__(self,data_table, blackbox,target_class='yes',seed=42,use_pre_mined=False,objective='simple'):
         random.seed(seed)
         core_init(seed,data_table)
         super().__init__(data_table,target_class,seed=42)
@@ -43,6 +43,9 @@ class ADS_Learner(Decision_Set_Learner):
         # for example target_class = 'yes' and the domain Y is ['no','yes']
         # then the target class idx = 1
         self.target_class_idx = self.data_table.domain.class_var.values.index(self.target_class)
+        self.use_pre_mined = use_pre_mined
+
+        self.objective_mode = objective
 
         self.count=0
         # categorical_features_idx = [i for i,a in enumerate(data_table.domain.attributes) if a.is_discrete]
@@ -68,24 +71,28 @@ class ADS_Learner(Decision_Set_Learner):
 
     def set_parameters(self,beta,lambda_parameter):
         self.N_iter_max = 1000
-        # self.N_iter_max = 5
+        # self.N_iter_max = 2
         self.lambda_parameter = lambda_parameter
         self.beta = beta
 
         self.N_batch = 10
         self.epsilon = 0.01
-        # self.supp=0.05
-        self.supp=0.01
-
+        self.supp=0.05
         # print("target class is:",self.target_class,". Its index is",self.target_class_idx)
         # TODO: add hyperparameter print
+        if self.objective_mode == "simple":
+            self.objective = lambda solution,X,Y,target_class_idx: simple_objective(solution,X,Y,target_class_idx=target_class_idx,lambda_parameter=self.lambda_parameter)
+        elif self.objective_mode == "bayesian":
+            from core import bayesian_objective
+            self.alpha_list = [ 1 for a in self.domain.attributes]
+            self.objective = lambda solution,X,Y,target_class_idx: bayesian_objective(solution,X,Y,target_class_idx=target_class_idx,alpha_list=self.alpha_list,num_attributes=len(self.domain.attributes))
         return
 
     def initialize(self):
         self.termination = False
 
         self.current_solution = []
-        self.current_obj = simple_objective(self.current_solution,self.data_table.X,self.data_table.Y,lambda_parameter=self.lambda_parameter,target_class_idx=self.target_class_idx)
+        self.current_obj = self.objective(self.current_solution,self.data_table.X,self.data_table.Y,target_class_idx=self.target_class_idx)
         # print("initial obj: ",self.current_obj)
         self.best_obj = deepcopy(self.current_obj)
         # self.best_solution = [ Rule(conditions=[deepcopy(c) for c in r.conditions],domain=domain,target_class_idx=target_class_idx) for r in self.current_solution];
@@ -110,7 +117,7 @@ class ADS_Learner(Decision_Set_Learner):
             return False
 
     def update_best_solution(self,best_action):
-        self.best_obj = simple_objective(self.best_solution,self.total_X,self.total_Y,lambda_parameter=self.lambda_parameter,target_class_idx=self.target_class_idx)
+        self.best_obj = self.objective(self.best_solution,self.total_X,self.total_Y,target_class_idx=self.target_class_idx)
 
         if self.best_obj < best_action.empirical_obj:
             self.best_obj = best_action.empirical_obj
@@ -128,9 +135,9 @@ class ADS_Learner(Decision_Set_Learner):
             '''re-start'''
             # print("re-staring!!!!!!!!!!!!")
             self.current_solution = []
-            self.current_obj = simple_objective(self.current_solution,self.total_X,self.total_Y,lambda_parameter=self.lambda_parameter,target_class_idx=self.target_class_idx)
-            if hasattr(self,'rule_space'):
-                delattr(self, 'rule_space')
+            self.current_obj = self.objective(self.current_solution,self.total_X,self.total_Y,target_class_idx=self.target_class_idx)
+            # if hasattr(self,'rule_space'):
+            #     delattr(self, 'rule_space')
             return
         elif t < self.epsilon:
             # print("take random")
@@ -166,22 +173,28 @@ class ADS_Learner(Decision_Set_Learner):
         start_time = time.time()
         # end_time = time.time()
         # print ('\tTook %0.3fs to generate the KDtree' % (time.time() - start_time ) )
-        self.current_obj =  simple_objective(self.current_solution,self.total_X,self.total_Y,lambda_parameter=self.lambda_parameter,target_class_idx=self.target_class_idx)
+        self.current_obj =  self.objective(self.current_solution,self.total_X,self.total_Y,target_class_idx=self.target_class_idx)
         for a in actions:
             a.update_current_obj(self.current_obj)
             a.update_objective(self.total_X,self.total_Y,self.domain,target_class_idx=self.target_class_idx)
         return actions
 
-
     def update(self):
         self.count+=1
         self.solution_history.append(deepcopy_decision_set(self.current_solution))
 
+    def output_the_best(self,lambda_parameter=None):
+        if lambda_parameter == self.lambda_parameter:
+            index,best_solution = max( enumerate(self.solution_history),key=lambda x: self.objective(x[1],self.total_X,self.total_Y,target_class_idx=self.target_class_idx) )
+            print("best solution found in iteration",index)
+        else:
+            if self.objective_mode == "simple":
+                index,best_solution = max( enumerate(self.solution_history),key=lambda x: simple_objective(x[1],self.total_X,self.total_Y,lambda_parameter=lambda_parameter,target_class_idx=self.target_class_idx) )
 
-    def output_the_best(self,lambda_parameter=0.001):
-        index,best_solution = max( enumerate(self.solution_history),key=lambda x: simple_objective(x[1],self.total_X,self.total_Y,lambda_parameter=lambda_parameter,target_class_idx=self.target_class_idx) )
+                print("best solution found in iteration",index)
+            else:
+                print("not supported")
 
-        print("best solution found in iteration",index)
         return best_solution
 
     def output(self):

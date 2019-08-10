@@ -19,9 +19,8 @@ import Orange
 from Orange.data import Table
 
 # todo:remove associate rule
-# from orangecontrib.associate.fpgrowth import frequent_itemsets, OneHot
 
-from core import simple_objective, get_incorrect_cover_ruleset
+from core import get_incorrect_cover_ruleset
 from utils import rule_to_string
 
 import logging
@@ -121,17 +120,6 @@ class Condition():
             try:
                 tmp = np.stack([np.equal(X[:,self.column], v) for v in self.values ])
                 return np.any(tmp,axis=0)
-                # if tmp.shape[0]>2:
-                #     print("ppp")
-                #     print(tmp.shape)
-                #     print(np.any(tmp,axis=0).shape)
-                #     print(np.any(tmp,axis=0)[:5])
-                #     print( np.logical_or.reduce(tmp).shape)
-                #     print( np.logical_or.reduce(tmp)[:5])
-                #     print("ppp")
-                #     quit()
-                # return np.logical_or.reduce(tmp)
-                # return [ (x[self.column] in self.values) for x in X ]
             except:
                 print(self.values)
                 print(X[:5,self.column])
@@ -144,7 +132,6 @@ class Condition():
             OPERATORS['<='](X[:,self.column], self.max),
             OPERATORS['>='](X[:,self.column], self.min)
             )
-            # return [ (x[self.column] <= self.max ) and (x[self.column >= self.min ) for x in X ]
 
     def __eq__(self, other):
         # return self.selectors == other.selectors
@@ -584,19 +571,26 @@ class Decision_Set_Learner():
 
         self.mode = mode
         actions = []
-        self.current_obj = simple_objective(self.current_solution,X,Y,target_class_idx=self.target_class_idx)
+        self.current_obj = self.objective(self.current_solution,X,Y,target_class_idx=self.target_class_idx)
 
         logging.debug("the current mode of action generating is"+mode)
 
         if mode == 'ADD_RULE':
             # todo: remove this
-            # if not hasattr(self,"rule_space"):
-            #     print("using pre-mined rules")
-            #     self.generate_rule_space()
-            # new_rules_candidates = self.rule_space
-            new_rules_candidates = self.new_rule_generating()
+            if self.use_pre_mined == True:
+                if not hasattr(self,"rule_space"):
+                    print("using pre-mined rules")
+                    self.generate_rule_space()
+                    # if len(self.rule_space) == 0:
+                    #     print("!!!!!!!!")
+                new_rules_candidates = self.rule_space
+            elif self.use_pre_mined != True:
+                new_rules_candidates = self.new_rule_generating()
+
             if new_rules_candidates is not None:
                 for candidate_rule_to_add in new_rules_candidates:
+                    if self.use_pre_mined == True and candidate_rule_to_add.evaluate_instance(anchor_instance_x) == False:
+                        continue
                     already_have_this_rule =False
                     for existed_rule in self.current_solution:
                         if candidate_rule_to_add == existed_rule:
@@ -604,12 +598,13 @@ class Decision_Set_Learner():
                             break
                     if already_have_this_rule == True:
                         continue
-                    action = Action(self.current_solution,('ADD_RULE',candidate_rule_to_add),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,lambda_parameter=self.lambda_parameter,rho=rho)
+                    action = Action(self.current_solution,('ADD_RULE',candidate_rule_to_add),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,lambda_parameter=self.lambda_parameter,rho=rho,objective=self.objective)
                     actions.append(action)
+
 
         elif mode == 'REMOVE_RULE':
             for candidate_rule_to_remove_idx,candidate_rule_to_remove in enumerate(self.current_solution):
-                action = Action(self.current_solution,('REMOVE_RULE',candidate_rule_to_remove_idx),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,lambda_parameter=self.lambda_parameter,rho=rho)
+                action = Action(self.current_solution,('REMOVE_RULE',candidate_rule_to_remove_idx),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,lambda_parameter=self.lambda_parameter,rho=rho,objective=self.objective)
                 actions.append(action)
             # actions = list(set(actions))
         elif mode == 'REMOVE_CONDITION':
@@ -618,10 +613,10 @@ class Decision_Set_Learner():
                     rule_new = rule.remove_condition(condition_idx,self.domain)
                     if len(rule_new.conditions) == 0:
                         # which means there is only one condition in this rule, remove this condition means to remove the entire rule
-                        # action = Action(self.current_solution,('REMOVE_RULE',rule_idx),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,lambda_parameter=self.lambda_parameter,rho=rho)
+                        # action = Action(self.current_solution,('REMOVE_RULE',rule_idx),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,lambda_parameter=self.lambda_parameter,rho=rho,objective=self.objective)
                         continue
                     else:
-                        action = Action(self.current_solution,('REMOVE_CONDITION',rule,rule_idx,rule_new),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,lambda_parameter=self.lambda_parameter,rho=rho)
+                        action = Action(self.current_solution,('REMOVE_CONDITION',rule,rule_idx,rule_new),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,lambda_parameter=self.lambda_parameter,rho=rho,objective=self.objective)
                     actions.append(action)
 
             # actions = list(set(actions))
@@ -642,7 +637,7 @@ class Decision_Set_Learner():
                                 continue
                             # todo: remove compute volume
                             rule_new.compute_volume(self.domain)
-                            action = Action(self.current_solution,('ADD_CONDITION',rule,rule_idx,rule_new),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,lambda_parameter=self.lambda_parameter,rho=rho)
+                            action = Action(self.current_solution,('ADD_CONDITION',rule,rule_idx,rule_new),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,lambda_parameter=self.lambda_parameter,rho=rho,objective=self.objective)
                             actions.append(action)
                     elif attribute.is_continuous:
                         # we use the discretized bin for continuous.
@@ -660,7 +655,7 @@ class Decision_Set_Learner():
                             rule_new = rule.add_condition(rule_idx,attribute_idx,possible_value,self.domain)
                             if rule_new.evaluate_instance(anchor_instance_x) == True:
                                 continue
-                            action = Action(self.current_solution,('ADD_CONDITION',rule,rule_idx,rule_new),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,lambda_parameter=self.lambda_parameter,rho=rho)
+                            action = Action(self.current_solution,('ADD_CONDITION',rule,rule_idx,rule_new),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,lambda_parameter=self.lambda_parameter,rho=rho,objective=self.objective)
                             actions.append(action)
             # print ('\tTook %0.3fs to generate for condition add %s actions' %( (time.time() - start_time ), str(len(actions)) )  )
             # actions = list(set(actions))
@@ -673,7 +668,7 @@ class Decision_Set_Learner():
                         continue
                     rule_new,modify_possible = rule.modify_to_cover(condition_idx,anchor_instance_x,self.domain)
                     if modify_possible == True:
-                        action = Action(self.current_solution,('EXPAND_CONDITION',rule,rule_idx,rule_new),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,lambda_parameter=self.lambda_parameter,rho=rho)
+                        action = Action(self.current_solution,('EXPAND_CONDITION',rule,rule_idx,rule_new),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,lambda_parameter=self.lambda_parameter,rho=rho,objective=self.objective)
                         actions.append(action)
                     else:
                         continue
@@ -683,7 +678,7 @@ class Decision_Set_Learner():
                 for condition_idx,condition in enumerate(rule.conditions):
                     rule_new,modify_possible = rule.modify_to_not_cover(condition_idx,anchor_instance_x,self.domain)
                     if modify_possible == True:
-                        action = Action(self.current_solution,('SPECIFY_CONDITION',rule,rule_idx,rule_new),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,lambda_parameter=self.lambda_parameter,rho=rho)
+                        action = Action(self.current_solution,('SPECIFY_CONDITION',rule,rule_idx,rule_new),X,Y,domain=self.domain,current_obj = self.current_obj,beta=beta,target_class_idx=self.target_class_idx,lambda_parameter=self.lambda_parameter,rho=rho,objective=self.objective)
                         actions.append(action)
                     else:
                         continue
@@ -805,6 +800,7 @@ class Decision_Set_Learner():
                 logging.debug("more than 100 steps (conditions) for a single rule finding, break")
                 break
         Best_rules = sorted(Best_rules,key=rcmp,reverse=True)[:BUDGET]
+        # Best_rules = sorted( [b for b in Best_rules if b.is_significant()],key=rcmp,reverse=True)[:BUDGET]
         # Best_rules = heapq.nlargest(BUDGET, Best_rules, key=rcmp)
 
 
@@ -859,6 +855,7 @@ class Decision_Set_Learner():
         using fp-growth to generate the space of rules.
         note that it needs itemset, so the first step is to translate the data in the form of item set
         """
+        from orangecontrib.associate.fpgrowth import frequent_itemsets, OneHot
 
         supp = self.supp
         print("start Generating rule space.  Min support:",supp)
@@ -879,13 +876,15 @@ class Decision_Set_Learner():
         decoder_item_to_feature = { idx:(feature.name,value) for idx,feature,value in OneHot.decode(mapping,disc_data_table,mapping)}
 
         self.rule_space = self.itemsets_to_rules(itemsets,self.domain,decoder_item_to_feature,self.target_class)
+        print("number of premined rules",len(self.rule_space) )
         self.rule_screening()
-        self.rule_space = sorted(self.rule_space)
-        print("number",len(self.rule_space))
+        # self.rule_space = sorted(self.rule_space)
         self.rule_space = sorted(set(self.rule_space))
-        print("number",len(self.rule_space))
         # for r in self.rule_space:
         #     print(rule_to_string(r,self.domain,1))
+        # from tqdm import tqdm_notebook as tqdm
+        # for rule in tqdm(self.rule_space):
+        #     rule.evaluate_data(self.total_X)
 
     def itemsets_to_rules(self,itemsets,domain,decoder_item_to_feature,target_class):
         import re
@@ -937,7 +936,9 @@ class Decision_Set_Learner():
 
     def rule_screening(self):
         ''' this screening process, the code is from the bayesian rule set paper. '''
+        # N_screening = 0.1 * len(self.rule_space)
         N_screening = 2000
+        # N_screening = 2
 
         print ('Screening rules using information gain')
         def accumulate(iterable, func=operator.add):
@@ -990,7 +991,7 @@ class Decision_Set_Learner():
 
 class Action():
 
-    def __init__(self,current_solution,modification,X,Y,domain,current_obj,beta,lambda_parameter=0.01,target_class_idx=1,rho=None):
+    def __init__(self,current_solution,modification,X,Y,domain,current_obj,beta,lambda_parameter=0.01,target_class_idx=1,rho=None,objective=None):
         mode = modification[0]
         self.mode = mode
         self.current_solution = current_solution
@@ -998,6 +999,8 @@ class Action():
         self.empirical_obj = current_obj
         self.hopeless = False
         # self.new_solution = [ Rule(conditions=[deepcopy(c) for c in r.conditions],domain=domain,target_class_idx=target_class_idx) for r in self.current_solution];
+
+        self.objective = objective
 
         # self.new_solution = deepcopy(self.current_solution);
         if mode == 'ADD_RULE':
@@ -1055,7 +1058,7 @@ class Action():
         '''
         update objective. and update the confidence interval
         '''
-        self.empirical_obj = simple_objective(self.new_solution,X,Y,lambda_parameter=self.lambda_parameter,target_class_idx=target_class_idx)
+        self.empirical_obj = self.objective(self.new_solution,X,Y,target_class_idx=target_class_idx)
 
         if self.beta == 0:
             self.beta_interval=0

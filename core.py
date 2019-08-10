@@ -12,10 +12,13 @@ random.seed(42)
 import warnings
 warnings.filterwarnings("ignore")
 
+from math import lgamma
+
 import sklearn
 from sklearn.metrics.pairwise import euclidean_distances as distance_function
 from sklearn.compose import make_column_transformer
 from sklearn.preprocessing import StandardScaler, OneHotEncoder,Normalizer
+from sklearn.metrics import confusion_matrix
 
 from Orange.data import Table
 from Orange.distance import Euclidean
@@ -42,22 +45,81 @@ def core_init(seed,data_table):
     return
 
 def simple_objective(solution,X,Y,lambda_parameter=0.01,target_class_idx=1):
-    #
-    # for r in solution:
-    #     curr_covered_or_not |= r.evaluate_data(X)
     if len(solution) > 0:
         tmp = np.stack([r.evaluate_data(X) for r in solution])
+        curr_covered_or_not = np.any(tmp,axis=0)
     else:
-        tmp = np.zeros(X.shape[0], dtype=np.bool)
-    curr_covered_or_not = np.any(tmp,axis=0)
+        curr_covered_or_not = np.zeros(X.shape[0], dtype=np.bool)
     corret_or_not = np.equal(Y,target_class_idx)
 
     # theta = sklearn.metrics.accuracy_score(corret_or_not,curr_covered_or_not)
     hit_or_not = np.equal(corret_or_not,curr_covered_or_not)
     theta = np.count_nonzero(hit_or_not) / hit_or_not.shape[0]
 
-
     return theta - lambda_parameter * len(solution)
+def bayesian_objective(solution,X,Y,target_class_idx=1,alpha_list=None,num_attributes=None):
+    def log_betabin(k,n,alpha,beta):
+        try:
+            Const =  lgamma(alpha + beta) - lgamma(alpha) - lgamma(beta)
+        except:
+            print ('alpha = {}, beta = {}'.format(alpha,beta))
+        if isinstance(k,list) or isinstance(k,np.ndarray):
+            if len(k)!=len(n):
+                print ('length of k is %d and length of n is %d'%(len(k),len(n)))
+                raise ValueError
+            lbeta = []
+            for ki,ni in zip(k,n):
+                # lbeta.append(lgamma(ni+1)- lgamma(ki+1) - lgamma(ni-ki+1) + lgamma(ki+alpha) + lgamma(ni-ki+beta) - lgamma(ni+alpha+beta) + Const)
+                lbeta.append(lgamma(ki+alpha) + lgamma(ni-ki+beta) - lgamma(ni+alpha+beta) + Const)
+            return np.array(lbeta)
+        else:
+            return lgamma(k+alpha) + lgamma(n-k+beta) - lgamma(n+alpha+beta) + Const
+            # return lgamma(n+1)- lgamma(k+1) - lgamma(n-k+1) + lgamma(k+alpha) + lgamma(n-k+beta) - lgamma(n+alpha+beta) + Const
+
+    # alpha is the shape parameter and beta is the rate parameter
+    def log_gampoiss(k,alpha,beta):
+        k = int(k)
+        return lgamma(k+alpha)-lgamma(k+1)-lgamma(alpha)+alpha*(np.log(beta)-np.log(beta+1))-k*np.log(1+beta)
+        # return lgamma(k+alpha)-lgamma(k+1)-k*np.log(1+beta)
+
+    def log_dirmult(k,alpha):
+        return  lgamma(sum(alpha)) - sum([lgamma(x) for x in alpha]) +sum([lgamma(alpha[i]+k[i]) for i in range(len(k))]) - lgamma(sum(k)+sum(alpha))
+
+    if len(solution) > 0:
+        tmp = np.stack([r.evaluate_data(X) for r in solution])
+        curr_covered_or_not = np.any(tmp,axis=0)
+    else:
+        curr_covered_or_not = np.zeros(X.shape[0], dtype=np.bool)
+    corret_or_not = np.equal(Y,target_class_idx)
+
+
+    alpha_1 = 900
+    beta_1 = 100
+    alpha_2 = 900
+    beta_2 = 100
+    alpha_M = 1
+    beta_M = 1
+    alpha_l = 1
+    beta_l = 1
+
+    TN, FP, FN, TP = confusion_matrix(corret_or_not.astype(int).tolist(), curr_covered_or_not.astype(int).tolist()).ravel()
+
+    N = len(solution)
+    Ln = [ len([ value for conditon in rule.conditions for value in conditon.values]) for rule in solution]
+    Jn = []
+    for rule in solution:
+        tmp = [ 0 for attr in range(num_attributes) ]
+        for c in rule.conditions:
+            tmp[c.column]+= len(c.values)
+        Jn.append(tmp)
+    prior_NumOfRules = log_gampoiss(N,alpha_M,beta_M)
+    prior_NumOfItems= sum([log_gampoiss(l, alpha_l,beta_l) for l in Ln])
+    prior_ChsItems = sum([log_dirmult(row,alpha_list) for row in Jn])
+    likelihood_1 =  log_betabin(TP,TP+FP,alpha_1,beta_1)
+    likelihood_2 = log_betabin(TN,FN+TN,alpha_2,beta_2)
+    return sum( [prior_NumOfRules,prior_NumOfItems,prior_ChsItems,likelihood_1,likelihood_2] )
+
+
 
 def sampling_criteria(distance_to_nearest_neighnour):
     '''

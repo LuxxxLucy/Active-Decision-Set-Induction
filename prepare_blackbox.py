@@ -19,7 +19,8 @@ def train_classifier(data_table,classifier_method="dnn",random_seed=42):
         c =RandomForestClassifier(n_estimators=15, n_jobs=5,random_state=random_seed)
     elif classifier_method == "dnn":
         from sklearn.neural_network import MLPClassifier
-        c = MLPClassifier(solver='adam', alpha=1e-3,  hidden_layer_sizes=(100,100,50,50,10), random_state=random_seed,verbose=True)
+        # c = MLPClassifier(solver='adam', alpha=1e-3,  hidden_layer_sizes=(100,100,50,50,10), random_state=random_seed,verbose=True)
+        c = MLPClassifier(solver='adam', alpha=1e-3,  hidden_layer_sizes=(100,100,50,50,10), random_state=random_seed,verbose=False)
     elif classifier_method == "xgb":
         from xgboost import XGBClassifier
         c = XGBClassifier(random_state=random_seed)
