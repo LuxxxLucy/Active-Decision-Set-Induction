@@ -1,6 +1,6 @@
 import numpy as np
 
-from .core import Selector, Pattern, Node
+from .core import Condition, Rule, Node
 from Orange.data import Table, Domain
 
 # base batch size, number of new query to the blackbox at each roll_out_estimate phase
@@ -18,7 +18,7 @@ def UCB1():
 
 class Tree:
 
-    def __init__(self,dataset,target_class,blackbox=None,active=True):
+    def __init__(self,dataset,target_class_idx,blackbox=None,active=True):
         '''
         1. keep memory of some key objects:domain, blackbox
         2. build the root node
@@ -31,15 +31,15 @@ class Tree:
 
         self.active = active # indicate active query or not
 
-        # the initial selectors is the set of conditions that cover every data real_instances
+        # the initial conditions is the set of conditions that cover every data real_instances
         # that is, [min,max] for every continuous feature and [all_values] for every categorical features
-        initial_selectors =  [
-            Selector(col,min_value = np.amin(dataset.X[:,col]),max_value=np.amax(dataset.X[:,col]),type='continuous' )
+        initial_conditions =  [
+            Condition(col,min_value = np.amin(dataset.X[:,col]),max_value=np.amax(dataset.X[:,col]),type='continuous' )
             if feature.is_continuous
-            else Selector(col, values=feature.values,type='categorical')
+            else Condition(col, values=feature.values,type='categorical')
             for col, feature  in enumerate(dataset.domain.attributes)
             ]
-        root_node = Node(self.domain,target_class, selectors=initial_selectors, parent=None, real_instances=dataset,base_selectors=initial_selectors)
+        root_node = Node(self.domain,target_class_idx, conditions=initial_conditions, parent=None, real_instances=dataset,base_conditions=initial_conditions)
         # print(root_node.pattern.target_class_idx)
         self.root_node = root_node
 
@@ -120,7 +120,7 @@ class Tree:
         X,Y = new_synthetic_instances.X, new_synthetic_instances.Y
         size = X.shape[0]
         covered_instances = np.ones(size,dtype=bool)
-        for selector in node.pattern.selectors:
+        for selector in node.pattern.conditions:
             covered_instances &= selector.filter_data(X)
         target_covered_instances = np.logical_and(  covered_instances, Y==1)
         new_true_positive = np.sum(target_covered_instances)

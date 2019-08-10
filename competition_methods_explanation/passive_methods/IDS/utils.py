@@ -42,6 +42,9 @@ def rules_convert(rule_set_IDS,data_table,target_class_idx):
             elif self.type == 'continuous':
                 return Condition.OPERATORS['<='](x[self.column], self.max) and Condition.OPERATORS['>='](x[self.column], self.min)
 
+        def filter_data_(self, X):
+            return self.filter_data(X)
+
         def filter_data(self, X):
             """
             Filter several instances concurrently. Retunrs array of bools
@@ -92,6 +95,9 @@ def rules_convert(rule_set_IDS,data_table,target_class_idx):
                 True, if the rule covers 'x'.
             """
             return all(condition.filter_instance(x) for condition in self.conditions)
+
+        def evaluate_data_(self, X):
+            return self.evaluate_data(X)
 
         def evaluate_data(self, X):
             """
@@ -192,6 +198,7 @@ def rules_convert(rule_set_IDS,data_table,target_class_idx):
                 else:
                     # categorical
                     s.values.append(data_table.domain.attributes[col_idx].values.index(string_conditions))
+
             previous_cols.append(col_idx)
 
         # merge, for example, merge "1<x<2" and "2<x<3" into "1<x<3"

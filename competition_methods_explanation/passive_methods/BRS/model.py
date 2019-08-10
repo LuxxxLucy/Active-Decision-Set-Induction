@@ -1,7 +1,7 @@
 # import some critical packages we use.
 import pandas as pd
 import numpy as np
-from fim import fpgrowth,fim
+from fim import fpgrowth
 from sklearn.ensemble import RandomForestClassifier
 from scipy.sparse import csc_matrix
 
@@ -27,9 +27,10 @@ class BRS(object):
     '''
     The Bayesian Decision Set model
     '''
-    def __init__(self,data_table, blackbox):
+    def __init__(self,data_table, blackbox,target_class_idx=1):
         self.data_table = data_table
         self.blackbox = blackbox
+        self.target_class_idx = target_class_idx
 
         self.discretized_data_table,self.df,self.Y = table_to_binary_df(data_table)
         self.attributeLevelNum = defaultdict(int)
@@ -38,24 +39,32 @@ class BRS(object):
             self.attributeNames.append(attribute.name)
             self.attributeLevelNum[attribute.name] = len(attribute.values)
         self.N = len(self.Y)
-        print(self.attributeNames)
-        print(self.attributeLevelNum)
 
-    def fit(self,domain,X,Y=None,target_class='yes',Niteration=100):
+    def fit(self,domain,X,Y=None,Niteration=100):
         N = 2000      # number of rules to be used in SA_patternbased and also the output of generate_rules
         Niteration = 500  # number of iterations in each chain
         Nchain = 2         # number of chains in the simulated annealing search algorithm
 
-        supp = 0.01           # 5% is a generally good number. The higher this supp, the 'larger' a pattern is
-        maxlen = 3         # maxmum length of a pattern
+        supp = 0.05           # 5% is a generally good number. The higher this supp, the 'larger' a pattern is
+        # supp = 0.01
+        supp = 0.004
+        # maxlen = 3         # maxmum length of a pattern
+        maxlen = 10        # maxmum length of a pattern
 
         # \rho = alpha/(alpha+beta). Make sure \rho is close to one when choosing alpha and beta.
-        alpha_1 = 500       # alpha_+
-        beta_1 = 1          # beta_+
-        alpha_2 = 500         # alpha_-
-        beta_2 = 1       # beta_-
+        # alpha_1 = 500       # alpha_+
+        # beta_1 = 1          # beta_+
+        # alpha_2 = 500         # alpha_-
+        # beta_2 = 1       # beta_-
+
+        # see this in the hyper-parameter tuning section of the BRS paper
+        alpha_1 = 900
+        beta_1 = 100
+        alpha_2 = 900
+        beta_2 = 100
 
         supp_num = int(X.shape[0]*supp)
+        # supp_num = 60
 
         self.generate_rules(supp_num,maxlen,N,method='fpgrowth')
         self.set_parameters(alpha_1,beta_1,alpha_2,beta_2,None,None)
@@ -89,22 +98,25 @@ class BRS(object):
         df = 1-self.df #df has negative associations
         df.columns = [name.strip() + '_neg' for name in self.df.columns]
         df = pd.concat([self.df,df],axis = 1)
-        if method =='fpgrowth' and maxlen<=3:
+        # if method =='fpgrowth' and maxlen<=3:
+        if method =='fpgrowth':
+            print ('Generating rules using fpgrowth, of support',self.supp,"max len", self.maxlen)
             itemMatrix = [[item for item in df.columns if row[item] ==1] for i,row in df.iterrows() ]
-            pindex = np.where(self.Y==1)[0]
-            nindex = np.where(self.Y!=1)[0]
-            print ('Generating rules using fpgrowth')
+            pindex = np.where(self.Y==self.target_class_idx)[0]
+            nindex = np.where(self.Y!=self.target_class_idx)[0]
+            # pindex = np.where(self.Y==1)[0]
+            # nindex = np.where(self.Y!=1)[0]
             start_time = time.time()
             rules= fpgrowth([itemMatrix[i] for i in pindex],supp = supp,zmin = 1,zmax = maxlen)
             rules = [tuple(np.sort(rule[0])) for rule in rules]
             rules = list(set(rules))
-            start_time = time.time()
             print ('\tTook %0.3fs to generate %d rules' % (time.time() - start_time, len(rules)))
         else:
             rules = []
+            print ('Generating rules using tree-based method ')
             start_time = time.time()
             for length in range(1,maxlen+1,1):
-                n_estimators = min(pow(df.shape[1],length),4000)
+                n_estimators = min(pow(df.shape[1],length),10)
                 clf = RandomForestClassifier(n_estimators = n_estimators,max_depth = length)
                 clf.fit(self.df,self.Y)
                 for n in range(n_estimators):
@@ -127,12 +139,25 @@ class BRS(object):
         indptr = np.array(indptr)
         data = np.ones(len(indices))
         ruleMatrix = csc_matrix((data,indices,indptr),shape = (len(df.columns),len(rules)))
-        mat = np.matrix(df) * ruleMatrix
+        print("1")
+        df_array = df.to_numpy()
+        print("2")
+        # matrix = np.matrix(df_array)
+        matrix = csc_matrix(df_array)
+        print("2.5")
+        print(matrix.shape)
+        print(ruleMatrix.shape)
+        mat = matrix * ruleMatrix
+        # mat = np.matrix(df) * ruleMatrix
+        print("3")
         lenMatrix = np.matrix([len_rules for i in range(df.shape[0])])
         Z =  (mat ==lenMatrix).astype(int)
+        print("4")
+        del mat,lenMatrix,indptr,data,len_rules,indices,itemInd
         Zpos = [Z[i] for i in np.where(self.Y>0)][0]
         TP = np.array(np.sum(Zpos,axis=0).tolist()[0])
-        supp_select = np.where(TP>=self.supp*sum(self.Y)/100)[0]
+        # supp_select = np.where(TP>=self.supp*sum(self.Y)/100)[0]
+        supp_select = np.where(TP>=self.supp*sum(self.Y)/100000)[0]
         FP = np.array(np.sum(Z,axis = 0))[0] - TP
         TN = len(self.Y) - np.sum(self.Y) - FP
         FN = np.sum(self.Y) - TP
@@ -146,6 +171,8 @@ class BRS(object):
         cond_entropy[p2*(1-p2)==0] = -(pp*(p1*np.log(p1)+(1-p1)*np.log(1-p1)))[p2*(1-p2)==0]
         cond_entropy[p1*(1-p1)*p2*(1-p2)==0] = 0
         select = np.argsort(cond_entropy[supp_select])[::-1][-N:]
+        print("5")
+        print(select.shape)
         self.rules = [rules[i] for i in supp_select[select]]
         self.RMatrix = np.array(Z[:,supp_select[select]])
         print ('\tTook %0.3fs to generate %d rules' % (time.time() - start_time, len(self.rules)) )
@@ -337,146 +364,210 @@ class BRS(object):
             print (self.rules[rule_index])
 
     def rules_convert(self,rules,domain):
-        from Orange.classification.rules import Rule
-        from collections import namedtuple
         import operator
         import re
         import math
+        from functools import reduce
 
-        # class Selector(namedtuple('Selector', 'column, op, value')):
-        #
-        #     OPERATORS = {
-        #         # discrete, nominal variables
-        #         '==': operator.eq,
-        #         '=': operator.eq,
-        #         '!=': operator.ne,
-        #         # continuous variables
-        #         '<=': operator.le,
-        #         "≤":operator.le,
-        #         '>=': operator.ge,
-        #         '≥':operator.ge,
-        #         '<': operator.lt,
-        #         '>': operator.gt,
-        #     }
-        #     def filter_instance(self, x):
-        #         """
-        #         Filter a single instance. Returns true or false
-        #         """
-        #         return Selector.OPERATORS[self[1]](x[self[0]], self[2])
-        #
-        #     def filter_data(self, X):
-        #         """
-        #         Filter several instances concurrently. Retunrs array of bools
-        #         """
-        #         return Selector.OPERATORS[self[1]](X[:, self[0]], self[2])
-
-        class Selector():
+        class Condition():
             '''
-            Selector represents a single condition.
-            It is modified based on the selector class from Orange package. (in particualr, Orange.classification.rule)
+            a single condition.
+            It is modified based on the condition class from Orange package. (in particualr, Orange.classification.rule)
             '''
             OPERATORS = {
                 # discrete, nominal variables
-                # '==': operator.eq,
-                # '=': operator.eq,
-                # '!=': operator.ne,
+                # 'in': lambda x,y: all( [operator.contains(y,x_tmp) for x_tmp in x ],
                 'in': lambda x,y: operator.contains(y,x),
-                # note the reverse order of argument in the contains function
-
                 # continuous variables
                 '<=': operator.le,
                 '>=': operator.ge,
-                '<': operator.lt,
-                '>': operator.gt,
             }
-            def __init__(self,column, values=None, min_value=-math.inf,max_value=math.inf, type='categorical'):
+            def __init__(self, column, values=None, min_value=-math.inf,max_value=math.inf,type='categorical',possible_range=[0,100]):
                 '''
                 differs in the number of arguments as for categorical feature and continuous features
                 '''
                 self.type = type
+                self.column = column
                 if type == 'categorical':
                     # for categorical features
-                    self.column = column
-                    # value_1 is a set of possible values
-                    self.values = values
+                    self.values = values # value is a set of possible values
                 elif type == 'continuous':
-                    # for continuous features
-                    self.column = column
-                    self.min = min_value
-                    self.max = max_value
+                    self.min = max(min_value,possible_range[0]) # for continuous features
+                    self.max = min(max_value,possible_range[1]) # for continuous features
                 else:
-                    print("critical error. Type of selector unspecified. Must be one of categorical or continuous ")
+                    print("critical error. Type of condition unspecified. Must be one of categorical or continuous ")
 
             def filter_instance(self, x):
                 """
                 Filter a single instance. Returns true or false
                 """
                 if self.type == 'categorical':
-                    return Selector.OPERATORS['in'](x[self.column], self.values)
+                    return Condition.OPERATORS['in'](x[self.column], self.values)
                 elif self.type == 'continuous':
-                    return Selector.OPERATORS['<='](x[self.column], self.max) and Selector.OPERATORS['>='](x[self.column], self.min)
+                    return Condition.OPERATORS['<='](x[self.column], self.max) and Condition.OPERATORS['>='](x[self.column], self.min)
+
+            def filter_data_(self, X):
+                return self.filter_data(X)
 
             def filter_data(self, X):
                 """
                 Filter several instances concurrently. Retunrs array of bools
                 """
-
                 if self.type == 'categorical':
-                    return np.logical_or.reduce(
-                    [np.equal(X[:,self.column], v) for v in self.values ]
-                    )
+                    # return Condition.OPERATORS['in'](X[:,self.column],self.values)
+                    try:
+                        return np.logical_or.reduce(
+                        [np.equal(X[:,self.column], v) for v in self.values ]
+                        )
+                    except:
+                        print(self.values)
+                        print(X[:5,self.column])
+                        print(np.logical_or.reduce(
+                        [np.equal(X[:5,self.column], v) for v in self.values ]
+                        ))
+                        quit()
+
                 elif self.type == 'continuous':
                     return np.logical_and(
-                    Selector.OPERATORS['<='](X[:,self.column], self.max),
-                    Selector.OPERATORS['>='](X[:,self.column], self.min)
+                    Condition.OPERATORS['<='](X[:,self.column], self.max),
+                    Condition.OPERATORS['>='](X[:,self.column], self.min)
                     )
+        class Rule:
+            def __init__(self,conditions,domain,target_class_idx):
+                """
+                Parameters:
+                    feature_value_pairs : a list of (column_idx,value) pairs
+                    class_label: the target class
+                    domain: the domain
+                """
+                self.conditions = conditions
+                self.target_class_idx = target_class_idx
 
+            def evaluate_instance(self, x):
+                """
+                Evaluate a single instance.
+
+                Parameters
+                ----------
+                x : ndarray
+                    Evaluate this instance.
+
+                Returns
+                -------
+                return : bool
+                    True, if the rule covers 'x'.
+                """
+                return all(condition.filter_instance(x) for condition in self.conditions)
+
+            def evaluate_data_(self, X):
+                return self.evaluate_data(X)
+
+            def evaluate_data(self, X):
+                """
+                Evaluate several instances concurrently.
+
+                Parameters
+                ----------
+                X : ndarray
+                    Evaluate this data.
+
+                Returns
+                -------
+                return : ndarray, bool
+                    Array of evaluations.
+                """
+                curr_covered = np.ones(X.shape[0], dtype=bool)
+                for condition in self.conditions:
+                    curr_covered &= condition.filter_data(X)
+                return curr_covered
+
+            def __len__(self):
+                return len(self.conditions)
+
+            def get_length(self):
+                return len(self.conditions)
+
+            def get_cover(self, X):
+                res = self.evaluate_data(X)
+                return np.where(res == True)[0]
+
+            def get_correct_cover(self, X, Y):
+                indices_instance_covered = self.get_cover(X)
+                y_tmp = Y[indices_instance_covered]
+
+                correct_cover = []
+                for ind in range(0,len(indices_instance_covered)):
+                    if y_tmp[ind] == self.target_class_idx:
+                        correct_cover.append(indices_instance_covered[ind])
+
+                return correct_cover, indices_instance_covered
+
+            def get_incorrect_cover(self, X, Y):
+                correct_cover, full_cover = self.get_correct_cover(X, Y)
+                return (sorted(list(set(full_cover) - set(correct_cover))))
+
+            def __eq__(self, other):
+                return self.conditions == other.conditions
+
+        for feature in self.data_table.domain.attributes:
+            if feature.is_continuous:
+                feature.max = max([ d[feature] for d in self.data_table ]).value
+                feature.min = min([ d[feature] for d in self.data_table ]).value
         rule_set = []
         col_names = [it.name for it in domain.attributes]
+        possible_range = [ (it.min,it.max) if it.is_continuous else (0,0) for it in self.data_table.domain.attributes   ]
+        print("number of rules",len(rules))
         for rule_str_tuple in rules:
-            previous_cols =[]
-            selectors=[]
-            for condition in rule_str_tuple:
-                name,string_conditions = condition.split('_')[:2]
-                col_idx = col_names.index(name)
-                if col_idx not in previous_cols:
-                    if domain.attributes[col_idx].is_continuous:
-                        c = re.split( "- | ",string_conditions)
-                        if len(c) == 2:
-                            if c[0] in ['<=','≤','<']:
-                                s = Selector(column=col_idx,max_value=float(c[1]),type='continuous')
-                            else:
-                                s = Selector(column=col_idx,min_value=float(c[1]),type='continuous')
-                            selectors.append(s)
-                        if len(c) == 3:
-                            s = Selector(column=col_idx,min_value=float(c[0]),max_value=float(c[2]),type='continuous')
-                            selectors.append(s)
-                    else:
-                        # categorical
-                        s = Selector(column=col_idx,values=[string_conditions],type='categorical')
-                        selectors.append(s)
-                else:
-                    s = selectors[ previous_cols.index(col_idx) ]
-                    if domain.attributes[col_idx].is_continuous:
-                        c = re.split( "- | ",string_conditions)
-                        if len(c) == 2:
-                            if c[0] in ['<=','≤','<']:
-                                s_tmp = Selector(column=col_idx,max_value=float(c[1]),type='continuous')
-                            else:
-                                s_tmp = Selector(column=col_idx,min_value=float(c[1]),type='continuous')
-                            s.max = max(s.max,s_tmp.max)
-                            s.min = min(s.min,s_tmp.min)
-                        if len(c) == 3:
-                            s.max = max(s.max,float(c[2]))
-                            s.min = min(s.min,float(c[0]))
-                    else:
-                        # categorical
-                        s.values.append(string_conditions)
-                previous_cols.append(col_idx)
+            try:
+                previous_cols =[]
+                conditions=[]
+                for condition in rule_str_tuple:
+                    name,string_conditions = condition.split('_')[:2]
+                    col_idx = col_names.index(name)
+                    if col_idx not in previous_cols:
+                        if domain.attributes[col_idx].is_continuous:
+                            c = re.split( "- | ",string_conditions)
+                            if len(c) == 2:
+                                if c[0] in ['<=','≤','<']:
+                                    s = Condition(column=col_idx,max_value=float(c[1]),type='continuous',possible_range=possible_range[col_idx])
 
-            # merge, for example, merge "1<x<2" and "2<x<3" into "1<x<3"
-            rule = Rule(selectors=selectors,domain=domain)
-            rule_set.append(rule)
+                                else:
+                                    s = Condition(column=col_idx,min_value=float(c[1]),type='continuous',possible_range=possible_range[col_idx])
+                                conditions.append(s)
+                            if len(c) == 3:
+                                s = Condition(column=col_idx,min_value=float(c[0]),max_value=float(c[2]),type='continuous')
+                                conditions.append(s)
+                        else:
+                            # categorical
+                            string_conditions_idx = self.data_table.domain.attributes[col_idx].values.index(string_conditions)
+                            s = Condition(column=col_idx,values=[string_conditions_idx],type='categorical')
+                            conditions.append(s)
+                    else:
+                        s = conditions[ previous_cols.index(col_idx) ]
+                        if domain.attributes[col_idx].is_continuous:
+                            c = re.split( "- | ",string_conditions)
+                            if len(c) == 2:
+                                if c[0] in ['<=','≤','<']:
+                                    s_tmp = Condition(column=col_idx,max_value=float(c[1]),type='continuous',possible_range=possible_range[col_idx])
+                                else:
+                                    s_tmp = Condition(column=col_idx,min_value=float(c[1]),type='continuous',possible_range=possible_range[col_idx])
+                                s.max = max(s.max,s_tmp.max)
+                                s.min = min(s.min,s_tmp.min)
+                            if len(c) == 3:
+                                s.max = max(s.max,float(c[2]))
+                                s.min = min(s.min,float(c[0]))
+                        else:
+                            # categorical
+                            string_conditions_idx = self.data_table.domain.attributes[col_idx].values.index(string_conditions)
+                            s.values.append(string_conditions_idx)
+                    previous_cols.append(col_idx)
+
+                # merge, for example, merge "1<x<2" and "2<x<3" into "1<x<3"
+                rule = Rule(conditions=conditions,domain=domain,target_class_idx=self.target_class_idx)
+                rule_set.append(rule)
+            except:
+                print("one error in converting")
+                continue
 
         return rule_set
 

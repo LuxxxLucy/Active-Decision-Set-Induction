@@ -29,9 +29,9 @@ SMALL_SPACE =  0.01
 MIN_SUPPORT = 1
 
 
-class Selector():
+class Condition():
     '''
-    Selector represents a single condition.
+    Condition represents a single condition.
     It is modified based on the selector class from Orange package. (in particualr, Orange.classification.rule)
     '''
     OPERATORS = {
@@ -71,9 +71,9 @@ class Selector():
         Filter a single instance. Returns true or false
         """
         if self.type == 'categorical':
-            return Selector.OPERATORS['in'](x[self.column], self.values)
+            return Condition.OPERATORS['in'](x[self.column], self.values)
         elif self.type == 'continuous':
-            return Selector.OPERATORS['<='](x[self.column], self.max) and Selector.OPERATORS['>='](x[self.column], self.min)
+            return Condition.OPERATORS['<='](x[self.column], self.max) and Condition.OPERATORS['>='](x[self.column], self.min)
 
     def filter_data(self, X):
         """
@@ -81,14 +81,30 @@ class Selector():
         """
 
         if self.type == 'categorical':
-            return np.logical_or.reduce(
-            [np.equal(X[:,self.column], v) for v in self.values ]
-            )
+            # return np.logical_or.reduce(
+            # [np.equal(X[:,self.column], v) for v in self.values ]
+            # )
+            tmp = np.stack([np.equal(X[:,self.column], v) for v in self.values ])
+            return np.any(tmp,axis=0)
         elif self.type == 'continuous':
             return np.logical_and(
-            Selector.OPERATORS['<='](X[:,self.column], self.max),
-            Selector.OPERATORS['>='](X[:,self.column], self.min)
+            Condition.OPERATORS['<='](X[:,self.column], self.max),
+            Condition.OPERATORS['>='](X[:,self.column], self.min)
             )
+
+    def __deepcopy__(self,memodict={}):
+        # copy_object = Condition()
+        # copy_object.value = self.value
+        if self.type == 'categorical':
+            column = self.column
+            values = self.values[:]
+            return Condition(column=column,values=values,type='categorical')
+            # return Condition(column=deepcopy(self.column,memodict),values=deepcopy(self.values,memodict),type='categorical')
+        elif self.type == 'continuous':
+            return  Condition(column=self.column,min_value=self.min,max_value=self.max,type='continuous')
+        else:
+            print("critical error. deep copy error! __deepcopy__ for Condition ")
+            quit()
 
     def sample(self,batch_size=10):
         if self.type == 'categorical':
@@ -103,7 +119,7 @@ class Selector():
             return synthetic_column
 
     def __eq__(self, other):
-        # return self.selectors == other.selectors
+        # return self.conditions == other.conditions
         if self.type != other.type:
             raise Exception('two selector should have the same type. The value of s1 was: {0} and the type of s2 was: {1}'.format(self.type,other.type))
             return
@@ -127,10 +143,10 @@ def diverse_filter_sorted(nodes,tree,dataset):
     # TODO: replce simple implementation
     # nodes = sorted(nodes, key=lambda x: x.compute_space_coverage(),reverse=True)
     nodes = sorted(nodes, key=lambda x: x.q_value,reverse=True)
-    nodes = [n for n in nodes if n.target_class == tree.root_node.target_class and n.precision>=0.5]
+    nodes = [n for n in nodes if n.target_class_idx == tree.root_node.target_class_idx and n.precision>=0.5]
     return nodes
 
-def compute_coverage(this_selectors,base_selectors):
+def compute_coverage(this_conditions,base_conditions):
     def compute_coverage_single(a,base):
         if a.type != base.type or a.column != base.column:
             raise Exception('critical error: unconsistent, a.type {0}, base.type{1}; a.column:{2},base.column{3}'.format(a.type,base.type,a.column,base.column))
@@ -141,11 +157,11 @@ def compute_coverage(this_selectors,base_selectors):
         else:
             raise Exception('critical error: unknown selector type a.type {0}, base.type'.format(a.type,base.type))
 
-    space_coverage_values =  np.array( [ compute_coverage_single(this,base) for this,base in zip(this_selectors,base_selectors)   ] )
+    space_coverage_values =  np.array( [ compute_coverage_single(this,base) for this,base in zip(this_conditions,base_conditions)   ] )
     space_coverage = np.prod(space_coverage_values)
     return space_coverage
 
-class Pattern:
+class Rule:
     """
     Represent a single pattern as a conjunction of many conditions and keep a reference to its parent.
     instance references are strictly not kept.
@@ -154,13 +170,13 @@ class Pattern:
     covered examples from rule to rule, provided that the original
     learning data reference is still known.
     """
-    def __init__(self, selectors=None,target_class_idx=1):
+    def __init__(self, conditions=None,target_class_idx=1):
         """
         Initialise a Rule.
 
         Parameters
         ----------
-        selectors : list of condition selectors
+        conditions : list of condition conditions
         parent_rule : a reference to the parent rule.
         domain : Orange.data.domain.Domain
             Data domain, used to calculate class distributions.
@@ -177,7 +193,7 @@ class Pattern:
         general_validator : Validator
             Validation algorithm.
         """
-        self.selectors = selectors if selectors is not None else []
+        self.conditions = conditions if conditions is not None else []
         self.target_class_idx =  target_class_idx
 
     def filter_and_store(self, X, Y, W, target_class, predef_covered=None):
@@ -199,7 +215,7 @@ class Pattern:
         #     self.covered_examples = predef_covered
         # else:
         #     self.covered_examples = np.ones(X.shape[0], dtype=bool)
-        #     for selector in self.selectors:
+        #     for selector in self.conditions:
         #         self.covered_examples &= selector.filter_data(X)
         #
         # self.curr_class_dist = get_dist(Y[self.covered_examples],
@@ -230,9 +246,9 @@ class Pattern:
         res : bool
             True, if the rule covers 'x'.
         """
-        return all(selector.filter_instance(x) for selector in self.selectors)
+        return all(selector.filter_instance(x) for selector in self.conditions)
 
-    def evaluate_data(self, X):
+    def evaluate_data_(self, X):
         """
         Evaluate several instances concurrently.
 
@@ -247,28 +263,34 @@ class Pattern:
             Array of evaluations.
         """
         curr_covered = np.ones(X.shape[0], dtype=bool)
-        for selector in self.selectors:
+        for selector in self.conditions:
             curr_covered &= selector.filter_data(X)
         return curr_covered
 
+    def evaluate_data(self, X):
+        return self.evaluate_data_(X)
+
     def __eq__(self, other):
-        # return self.selectors == other.selectors
+        # return self.conditions == other.conditions
         return np.array_equal(self.covered_examples, other.covered_examples)
 
     def __len__(self):
-        return len(self.selectors)
+        return len(self.conditions)
+
+    def __deepcopy__(self,memodict={}):
+        return Rule(conditions=[ deepcopy(c,memodict) for c in self.conditions],target_class_idx=self.target_class_idx)
 
     def string_representation(self,domain):
         attributes = domain.attributes
         class_var = domain.class_var
-        if self.selectors:
+        if self.conditions:
             cond = " AND ".join([
                                 str(s.min) + " <= " +
                                 attributes[s.column].name +
                                 " <= " + str(s.max)
                                 if attributes[s.column].is_continuous
                                 else attributes[s.column].name + " in " + str(attributes[s.column].values[int(s.values)])
-                                for s in self.selectors
+                                for s in self.conditions
                                 ])
         else:
             cond = "TRUE"
@@ -279,7 +301,7 @@ class Pattern:
 
 class Node:
 
-    def __init__(self,domain,target_class,selectors,parent,real_instances=None, synthetic_instances=None,base_selectors=None):
+    def __init__(self,domain,target_class_idx,conditions,parent,real_instances=None, synthetic_instances=None,base_conditions=None):
         '''
         A node in the MCTS tree.
         Basically, there are three types of variables
@@ -295,12 +317,13 @@ class Node:
         # static variables of this node that will not be modified after initialization
         # information about current_node
         self.domain = domain
-        self.target_class = target_class
-        self.target_class_idx = domain.class_var.values.index(target_class)
-        self.pattern = Pattern(selectors=selectors, target_class_idx=self.target_class_idx)
-        self.base_selectors = base_selectors
-        if base_selectors == None:
-            raise Exception('error! base_selectors wrong!')
+        # self.target_class_idx = domain.class_var.values.index(target_class)
+        self.target_class_idx = target_class_idx
+        self.target_class = domain.class_var.values[target_class_idx]
+        self.pattern = Rule(conditions=conditions, target_class_idx=self.target_class_idx)
+        self.base_conditions = base_conditions
+        if base_conditions == None:
+            raise Exception('error! base_conditions wrong!')
 
 
         # dynamic variables of this node that will be modified
@@ -318,7 +341,7 @@ class Node:
         if parent != None:
             self.dirty_indication = parent.dirty_indication
             if np.mean(self.dirty_indication) != 1:
-                col_different = np.array(  [ a == b for a,b in zip(parent.pattern.selectors,self.pattern.selectors) ] )
+                col_different = np.array(  [ a == b for a,b in zip(parent.pattern.conditions,self.pattern.conditions) ] )
                 col_idx = np.where( col_different == False ) [0][0]
                 self.dirty_indication[col_idx] = True
             else:
@@ -376,7 +399,7 @@ class Node:
         X,Y = tmp_instances_set.X, tmp_instances_set.Y
         size = X.shape[0]
         covered_instances = np.ones(size,dtype=bool)
-        for selector in self.pattern.selectors:
+        for selector in self.pattern.conditions:
             covered_instances &= selector.filter_data(X)
         target_covered_instances = np.logical_and(  covered_instances, Y==1)
 
@@ -399,7 +422,7 @@ class Node:
         X,Y = new_synthetic_instances.X, new_synthetic_instances.Y
         size = X.shape[0]
         covered_instances = np.ones(size,dtype=bool)
-        for selector in self.pattern.selectors:
+        for selector in self.pattern.conditions:
             covered_instances &= selector.filter_data(X)
         target_covered_instances = np.logical_and(  covered_instances, Y==1)
         new_true_positive = np.sum(target_covered_instances)
@@ -417,7 +440,7 @@ class Node:
         self.count += len(new_synthetic_instances)
 
     def compute_space_coverage(self):
-        space_coverage = compute_coverage(self.pattern.selectors,self.base_selectors)
+        space_coverage = compute_coverage(self.pattern.conditions,self.base_conditions)
         return space_coverage
 
     def split(self):
@@ -468,14 +491,14 @@ class Node:
             return the best split info gain for a given feature (a given selector)
             '''
             instances = Table.from_table(real_instances.domain,real_instances)
-            selectors = pattern.selectors
-            selector = selectors[i]
+            conditions = pattern.conditions
+            selector = conditions[i]
             if selector.type == 'continuous':
                 def split_selector(s,threshold):
-                    s_1 = copy.deepcopy(selectors); s_1[i].max = threshold
-                    s_2 = copy.deepcopy(selectors); s_2[i].min = threshold
-                    p_1 = Pattern(selectors=s_1,target_class_idx=pattern.target_class_idx)
-                    p_2 = Pattern(selectors=s_2,target_class_idx=pattern.target_class_idx)
+                    s_1 = copy.deepcopy(conditions); s_1[i].max = threshold
+                    s_2 = copy.deepcopy(conditions); s_2[i].min = threshold
+                    p_1 = Rule(conditions=s_1,target_class_idx=pattern.target_class_idx)
+                    p_2 = Rule(conditions=s_2,target_class_idx=pattern.target_class_idx)
                     return (p_1,p_2)
                 # TODO: make this small threshold to percentage
                 if (selector.max - selector.min) <= SMALL_THRESHOLD:
@@ -492,7 +515,7 @@ class Node:
             tuples = []
             for option,(p_1,p_2) in options:
                 # construct new selector for a given threshold option
-                value = info_gain(selectors,p_1,p_2,instances)
+                value = info_gain(conditions,p_1,p_2,instances)
                 tuples.append( ( option,p_1,p_2,value  ))
 
             _,p_1,p_2,value = max(tuples, key=lambda x: x[3])
@@ -501,10 +524,10 @@ class Node:
 
         def select_best_split(pattern,real_instances,synthetic_instances):
             '''
-            return best two new selectors after split
+            return best two new conditions after split
             '''
-            selectors = pattern.selectors
-            pairs = [ (s.column, best_split_single_feature(i,pattern,real_instances,synthetic_instances) ) for i,s in enumerate(selectors)  ]
+            conditions = pattern.conditions
+            pairs = [ (s.column, best_split_single_feature(i,pattern,real_instances,synthetic_instances) ) for i,s in enumerate(conditions)  ]
             # argmax, finding the most info_gain
             col, (p_1,p_2,_) = max(pairs, key=lambda x: x[1][2])
             return col,p_1, p_2
@@ -522,13 +545,13 @@ class Node:
         real_instances_1 = Table.from_table(self.real_instances.domain,self.real_instances,row_indices=index)
         index = np.where( p_1.evaluate_data(self.synthetic_instances.X) )[0]
         synthetic_instances_1 = Table.from_table(self.synthetic_instances.domain,self.synthetic_instances,row_indices=index)
-        child_1 =  Node(self.domain,self.target_class, selectors=p_1.selectors, parent=self, real_instances=real_instances_1,synthetic_instances=synthetic_instances_1,base_selectors=self.base_selectors)
+        child_1 =  Node(self.domain,self.target_class_idx, conditions=p_1.conditions, parent=self, real_instances=real_instances_1,synthetic_instances=synthetic_instances_1,base_conditions=self.base_conditions)
 
         index = np.where( p_2.evaluate_data(self.real_instances.X) )[0]
         real_instances_2 = Table.from_table(self.real_instances.domain,self.real_instances,row_indices=index)
         index = np.where( p_2.evaluate_data(self.synthetic_instances.X) )[0]
         synthetic_instances_2 = Table.from_table(self.synthetic_instances.domain,self.synthetic_instances,row_indices=index)
-        child_2 =  Node(self.domain,self.target_class, selectors=p_2.selectors, parent=self, real_instances=real_instances_2,synthetic_instances=synthetic_instances_2,base_selectors=self.base_selectors)
+        child_2 =  Node(self.domain,self.target_class_idx, conditions=p_2.conditions, parent=self, real_instances=real_instances_2,synthetic_instances=synthetic_instances_2,base_conditions=self.base_conditions)
 
         self.children.extend([child_1,child_2])
         self.real_instances=[]
@@ -575,14 +598,14 @@ class Node:
             return the best split info gain for a given feature (a given selector)
             '''
             instances = Table.from_table(real_instances.domain,real_instances)
-            selectors = pattern.selectors
-            selector = selectors[i]
+            conditions = pattern.conditions
+            selector = conditions[i]
             if selector.type == 'continuous':
                 def split_selector(s,threshold):
-                    s_1 = copy.deepcopy(selectors); s_1[i].max = threshold
-                    s_2 = copy.deepcopy(selectors); s_2[i].min = threshold
-                    p_1 = Pattern(selectors=s_1,target_class_idx=pattern.target_class_idx)
-                    p_2 = Pattern(selectors=s_2,target_class_idx=pattern.target_class_idx)
+                    s_1 = copy.deepcopy(conditions); s_1[i].max = threshold
+                    s_2 = copy.deepcopy(conditions); s_2[i].min = threshold
+                    p_1 = Rule(conditions=s_1,target_class_idx=pattern.target_class_idx)
+                    p_2 = Rule(conditions=s_2,target_class_idx=pattern.target_class_idx)
                     return (p_1,p_2)
                 # TODO: make this small threshold to percentage
                 if (selector.max - selector.min) <= SMALL_THRESHOLD:
@@ -599,7 +622,7 @@ class Node:
             tuples = []
             for option,(p_1,p_2) in options:
                 # construct new selector for a given threshold option
-                value = gini_index(selectors,p_1,p_2,instances)
+                value = gini_index(conditions,p_1,p_2,instances)
                 tuples.append( ( option,p_1,p_2,value  ))
 
             _,p_1,p_2,value = max(tuples, key=lambda x: x[3])
@@ -608,10 +631,10 @@ class Node:
 
         def select_best_split(pattern,real_instances,synthetic_instances):
             '''
-            return best two new selectors after split
+            return best two new conditions after split
             '''
-            selectors = pattern.selectors
-            pairs = [ (s.column, best_split_single_feature(i,pattern,real_instances,synthetic_instances) ) for i,s in enumerate(selectors)  ]
+            conditions = pattern.conditions
+            pairs = [ (s.column, best_split_single_feature(i,pattern,real_instances,synthetic_instances) ) for i,s in enumerate(conditions)  ]
             # argmax, finding the most info_gain
             col, (p_1,p_2,_) = max(pairs, key=lambda x: x[1][2])
             return col,p_1, p_2
@@ -629,13 +652,13 @@ class Node:
         real_instances_1 = Table.from_table(self.real_instances.domain,self.real_instances,row_indices=index)
         index = np.where( p_1.evaluate_data(self.synthetic_instances.X) )[0]
         synthetic_instances_1 = Table.from_table(self.synthetic_instances.domain,self.synthetic_instances,row_indices=index)
-        child_1 =  Node(self.domain,self.target_class, selectors=p_1.selectors, parent=self, real_instances=real_instances_1,synthetic_instances=synthetic_instances_1,base_selectors=self.base_selectors)
+        child_1 =  Node(self.domain,self.target_class_idx, conditions=p_1.conditions, parent=self, real_instances=real_instances_1,synthetic_instances=synthetic_instances_1,base_conditions=self.base_conditions)
 
         index = np.where( p_2.evaluate_data(self.real_instances.X) )[0]
         real_instances_2 = Table.from_table(self.real_instances.domain,self.real_instances,row_indices=index)
         index = np.where( p_2.evaluate_data(self.synthetic_instances.X) )[0]
         synthetic_instances_2 = Table.from_table(self.synthetic_instances.domain,self.synthetic_instances,row_indices=index)
-        child_2 =  Node(self.domain,self.target_class, selectors=p_2.selectors, parent=self, real_instances=real_instances_2,synthetic_instances=synthetic_instances_2,base_selectors=self.base_selectors)
+        child_2 =  Node(self.domain,self.target_class_idx, conditions=p_2.conditions, parent=self, real_instances=real_instances_2,synthetic_instances=synthetic_instances_2,base_conditions=self.base_conditions)
 
         self.children.extend([child_1,child_2])
         self.real_instances=[]
@@ -644,8 +667,8 @@ class Node:
 
     def sample(self,batch_size=10):
         # sort with column index, this is to be consistent with table domain
-        tmp_selectors = sorted(self.pattern.selectors,key=lambda x:x.column )
-        raw_X_columns = [ s.sample(batch_size=batch_size) for s in tmp_selectors]
+        tmp_conditions = sorted(self.pattern.conditions,key=lambda x:x.column )
+        raw_X_columns = [ s.sample(batch_size=batch_size) for s in tmp_conditions]
         raw_X = np.column_stack(raw_X_columns)
         return raw_X
 

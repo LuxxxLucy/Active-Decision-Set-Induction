@@ -7,6 +7,29 @@ import pandas as pd
 import math
 from .apyori import apriori
 
+import sys
+# this is a pointer to the module object instance itself.
+this = sys.modules[__name__]
+this.cache_bit_map_condition_get_cover = {}
+this.cache_bit_map_rule_get_cover = {}
+this.cache_bit_map_rule_get_correct_cover = {}
+this.cache_bit_map_rule_get_incorrect_cover = {}
+
+from tqdm import tqdm_notebook as tqdm
+
+
+def get_cover_condition(df,pattern):
+    key = pattern
+    if key in this.cache_bit_map_condition_get_cover:
+        return this.cache_bit_map_condition_get_cover[key]
+    else:
+        this.cache_bit_map_condition_get_cover[key] = get_cover_condition_(df,pattern)
+        return this.cache_bit_map_condition_get_cover[key]
+
+def get_cover_condition_(df,pattern):
+    tmp = df.apply( lambda x: x[pattern[0]] == pattern[1] ,axis=1  )
+    return set(df[tmp].index.values)
+
 # rule is of the form if A == a and B == b, then class_1
 # one of the member variables is itemset - a set of patterns {(A,a), (B,b)}
 # the other member variable is class_label (e.g., class_1)
@@ -47,13 +70,44 @@ class rule:
     def get_length(self):
         return len(self.itemset)
 
-    def get_cover(self, df):
-        dfnew = df.copy()
-        for pattern in self.itemset:
-            dfnew = dfnew[dfnew[pattern[0]] == pattern[1]]
-        return list(dfnew.index.values)
+    def __hash__(self):
+        itemset_values = [ str(item[0]) + str(item[1]) for item in self.itemset ]
+        return hash( (self.class_label,tuple(itemset_values)) )
 
-    def get_correct_cover(self, df, Y):
+    def get_cover(self,df):
+        if self in this.cache_bit_map_rule_get_cover:
+            return this.cache_bit_map_rule_get_cover[self]
+        else:
+            this.cache_bit_map_rule_get_cover[self] = self.get_cover_(df)
+            return this.cache_bit_map_rule_get_cover[self]
+        return
+
+    def get_cover_(self, df):
+        # dfnew = df.copy()
+        # for pattern in self.itemset:
+        #     dfnew = dfnew[dfnew[pattern[0]] == pattern[1]]
+        # return list(dfnew.index.values)
+        # import time
+        # start_time = time.time()
+        # new = df.apply( lambda x: all([ x[pattern[0]] == pattern[1] for pattern in self.itemset ]),axis=1  )
+        set_of_cover_per_condition = [ get_cover_condition(df,pattern)  for pattern in self.itemset]
+        result = sorted(set.intersection(*set_of_cover_per_condition))
+        # print('\tTook %0.3fs to get the cover' % (time.time() - start_time) )
+        # print(list(dfnew.index.values))
+        # print(result)
+        return result
+        # return list(df[new].index.values)
+        # return result_indices
+
+    def get_correct_cover(self,df,Y):
+        if self in this.cache_bit_map_rule_get_correct_cover:
+            return this.cache_bit_map_rule_get_correct_cover[self]
+        else:
+            this.cache_bit_map_rule_get_correct_cover[self] = self.get_correct_cover_(df,Y)
+            return this.cache_bit_map_rule_get_correct_cover[self]
+        return
+
+    def get_correct_cover_(self, df, Y):
         indexes_points_covered = self.get_cover(df) # indices of all points satisfying the rule
         Y_arr = pd.Series(Y)                    # make a series of all Y labels
         labels_covered_points = list(Y_arr[indexes_points_covered])   # get a list only of Y labels of the points covered
@@ -63,9 +117,19 @@ class rule:
                 correct_cover.append(indexes_points_covered[ind])
         return correct_cover, indexes_points_covered
 
-    def get_incorrect_cover(self, df, Y):
+    def get_incorrect_cover(self,df,Y):
+        if self in this.cache_bit_map_rule_get_incorrect_cover:
+            return this.cache_bit_map_rule_get_incorrect_cover[self]
+        else:
+            this.cache_bit_map_rule_get_incorrect_cover[self] = self.get_incorrect_cover_(df,Y)
+            return this.cache_bit_map_rule_get_incorrect_cover[self]
+        return
+
+    def get_incorrect_cover_(self, df, Y):
         correct_cover, full_cover = self.get_correct_cover(df, Y)
         return (sorted(list(set(full_cover) - set(correct_cover))))
+
+
 
 
 # below function basically takes a data frame and a support threshold and returns itemsets which satisfy the threshold
@@ -143,32 +207,38 @@ def func_evaluation(soln_set, list_rules, df, Y, lambda_array):
     f.append(f1)
 
     # f2 term - intraclass overlap
-    sum_overlap_intraclass = 0.0
-    for r1_index in soln_set:
-        for r2_index in soln_set:
-            if r1_index >= r2_index:
-                continue
-            if list_rules[r1_index].class_label == list_rules[r2_index].class_label:
-                sum_overlap_intraclass += len(overlap(list_rules[r1_index], list_rules[r2_index],df))
-    f2 = df.shape[0] * len(list_rules) * len(list_rules) - sum_overlap_intraclass
+
+    # sum_overlap_intraclass = 0.0
+    # for r1_index in soln_set:
+    #     for r2_index in soln_set:
+    #         if r1_index >= r2_index:
+    #             continue
+    #         if list_rules[r1_index].class_label == list_rules[r2_index].class_label:
+    #             sum_overlap_intraclass += len(overlap(list_rules[r1_index], list_rules[r2_index],df))
+    # f2 = df.shape[0] * len(list_rules) * len(list_rules) - sum_overlap_intraclass
+    f2 = 0
     f.append(f2)
 
     # f3 term - interclass overlap
-    sum_overlap_interclass = 0.0
-    for r1_index in soln_set:
-        for r2_index in soln_set:
-            if r1_index >= r2_index:
-                continue
-            if list_rules[r1_index].class_label != list_rules[r2_index].class_label:
-                sum_overlap_interclass += len(overlap(list_rules[r1_index], list_rules[r2_index],df))
-    f3 = df.shape[0] * len(list_rules) * len(list_rules) - sum_overlap_interclass
+
+    # sum_overlap_interclass = 0.0
+    # for r1_index in soln_set:
+    #     for r2_index in soln_set:
+    #         if r1_index >= r2_index:
+    #             continue
+    #         if list_rules[r1_index].class_label != list_rules[r2_index].class_label:
+    #             sum_overlap_interclass += len(overlap(list_rules[r1_index], list_rules[r2_index],df))
+    # f3 = df.shape[0] * len(list_rules) * len(list_rules) - sum_overlap_interclass
+    f3 = 0
     f.append(f3)
 
     # f4 term - coverage of all classes
-    classes_covered = set() # set
-    for index in soln_set:
-        classes_covered.add(list_rules[index].class_label)
-    f4 = len(classes_covered)
+
+    # classes_covered = set() # set
+    # for index in soln_set:
+    #     classes_covered.add(list_rules[index].class_label)
+    # f4 = len(classes_covered)
+    f4 = 0
     f.append(f4)
 
     # f5 term - accuracy
@@ -179,11 +249,12 @@ def func_evaluation(soln_set, list_rules, df, Y, lambda_array):
     f.append(f5)
 
     #f6 term - cover correctly with at least one rule
-    atleast_once_correctly_covered = set()
-    for index in soln_set:
-        correct_cover, full_cover = list_rules[index].get_correct_cover(df,Y)
-        atleast_once_correctly_covered = atleast_once_correctly_covered.union(set(correct_cover))
-    f6 = len(atleast_once_correctly_covered)
+    # atleast_once_correctly_covered = set()
+    # for index in soln_set:
+    #     correct_cover, full_cover = list_rules[index].get_correct_cover(df,Y)
+    #     atleast_once_correctly_covered = atleast_once_correctly_covered.union(set(correct_cover))
+    # f6 = len(atleast_once_correctly_covered)
+    f6 = 0
     f.append(f6)
 
     obj_val = 0.0
@@ -226,6 +297,7 @@ def estimate_omega_for_element(soln_set, delta, rule_x_index, list_rules, df, Y,
 
     Exp2_func_vals = []
 
+    count = 0
     while(True):
 
         # first expectation term (include x)
@@ -245,9 +317,10 @@ def estimate_omega_for_element(soln_set, delta, rule_x_index, list_rules, df, Y,
         variance_Exp1 = np.var(Exp1_func_vals, dtype=np.float64)
         variance_Exp2 = np.var(Exp2_func_vals, dtype=np.float64)
         std_err = math.sqrt(variance_Exp1/len(Exp1_func_vals) + variance_Exp2/len(Exp2_func_vals))
-        print("Standard Error "+str(std_err))
+        # print("Standard Error "+str(std_err))
 
-        if std_err <= error_threshold:
+        count+=1
+        if std_err <= error_threshold or count >=1:
             break
 
     return np.mean(Exp1_func_vals) - np.mean(Exp2_func_vals)
@@ -268,10 +341,27 @@ def smooth_local_search(list_rules, df, Y, lambda_array, delta, delta_prime):
     # step by step implementation of smooth local search algorithm in the
     # FOCS paper: https://people.csail.mit.edu/mirrokni/focs07.pdf (page 6)
 
+    this.cache_bit_map_condition_get_cover = {}
+    this.cache_bit_map_rule_get_cover = {}
+    this.cache_bit_map_rule_get_correct_cover = {}
+    this.cache_bit_map_rule_get_incorrect_cover = {}
+
+    print("data set shape",df.shape[0])
+
+    print("init compute")
+    for rule in tqdm(list_rules):
+        rule.get_cover(df)
+        rule.get_correct_cover(df,Y)
+        rule.get_correct_cover(df,Y)
+    print("init okay")
+
+
+    print("compute OPT")
     # step 1: set the value n and OPT; initialize soln_set to empty
     n = len(list_rules)
     OPT = compute_OPT(list_rules, df, Y, lambda_array)
-    print("2/n*n OPT value is "+str(2.0/(n*n)*OPT))
+    print("compute OPT finished")
+    # print("2/n*n OPT value is "+str(2.0/(n*n)*OPT))
 
     soln_set = set()
 
@@ -282,12 +372,13 @@ def smooth_local_search(list_rules, df, Y, lambda_array, delta, delta_prime):
         # step 2 & 3: for each element estimate omega within certain error_threshold; if estimated omega > 2/n^2 * OPT, then add
         # the corresponding rule to soln set and recompute omega estimates again
         omega_estimates = []
-        for rule_x_index in range(n):
+        # for rule_x_index in range(n):
+        for rule_x_index in tqdm(range(n)):
 
-            print("Estimating omega for rule "+str(rule_x_index))
+            # print("Estimating omega for rule "+str(rule_x_index))
             omega_est = estimate_omega_for_element(soln_set, delta, rule_x_index, list_rules, df, Y, lambda_array, 1.0/(n*n) * OPT)
             omega_estimates.append(omega_est)
-            print("Omega estimate is "+str(omega_est))
+            # print("Omega estimate is "+str(omega_est))
 
             if rule_x_index in soln_set:
                 continue

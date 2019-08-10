@@ -41,23 +41,36 @@ def explain_tabular(dataset, blackbox, target_class_idx=1, pre_label=True, rando
     import Orange
     from Orange.data.pandas_compat import table_to_frame
     import pandas as pd
-    disc = Orange.preprocess.Discretize()
-    disc.method = Orange.preprocess.discretize.EqualFreq(n=5)
-    # disc.method = Orange.preprocess.discretize.EntropyMDL(force=True)
-    disc_data_table = disc(dataset)
-    df = table_to_frame(disc_data_table)
-    # Y = pd.DataFrame(disc_data_table.Y,columns=[disc_data_table.domain.class_var.name],dtype='int32')
+    if all([ a.is_discrete for a in dataset.domain.attributes]) == True:
+        disc_data_table = dataset
+    else:
+        print("discre")
+        disc = Orange.preprocess.Discretize()
+        disc.method = Orange.preprocess.discretize.EqualFreq(n=5)
+        # disc.method = Orange.preprocess.discretize.EntropyMDL(force=True)
+        disc_data_table = disc(dataset)
+        # df = table_to_frame(disc_data_table)
+        # Y = pd.DataFrame(disc_data_table.Y,columns=[disc_data_table.domain.class_var.name],dtype='int32')
+
+    assert all([ a.is_discrete for a in disc_data_table.domain.attributes]), " is not pre-discretized!"
+    # disc_data_table = dataset
     Y = disc_data_table.Y
+    df = table_to_frame(disc_data_table)
     df.drop(df.columns[-1],axis = 1, inplace = True)
 
 
-    itemsets = run_apriori(df, 0.2)
+    print("start Apriori")
+    itemsets = run_apriori(df, 0.05)
+    # itemsets = run_apriori(df, 0.5)
+    print("finish Apriori. Converting itemset")
     list_of_rules = createrules(itemsets, list(set(Y)))
-    print("----------------------")
-    for r in list_of_rules:
-        r.print_rule()
+    print("Pre-mined okay. all pre-mined rules of",len(list_of_rules))
+    # print("----------------------")
+    # for r in list_of_rules:
+    #     r.print_rule()
 
-    lambda_array = [1.0]*7     # use separate hyperparamter search routine
+    # lambda_array = [1.0]*7     # use separate hyperparamter search routine
+    lambda_array = [0.5,1.0,1.0,1.0,1.0,1.5,1.0]     # use separate hyperparamter search routine
     s1 = smooth_local_search(list_of_rules, df, Y, lambda_array, 0.33, 0.33)
     s2 = smooth_local_search(list_of_rules, df, Y, lambda_array, 0.33, -1.0)
     f1 = func_evaluation(s1, list_of_rules, df, Y, lambda_array)
@@ -68,7 +81,20 @@ def explain_tabular(dataset, blackbox, target_class_idx=1, pre_label=True, rando
     else:
         print("The Solution Set is: "+str(s2))
         rule_set = [ list_of_rules[idx] for idx in s2]
+        print(rule_set)
 
     # convert the rule representation
     rule_set = rules_convert(rule_set,dataset, target_class_idx=target_class_idx)
     return rule_set
+
+def compute_metrics_ids(rules):
+    print("number of rules",len(rules))
+    if len(rules) != 0:
+        print("ave number of conditions" , sum([ len(r.conditions) for r in rules]) / len(rules) )
+        print("max number of conditions" , max([ len(r.conditions) for r in rules]) )
+        print("used features", len(set(  [ c.column for r in rules for c in r.conditions]  ) )  )
+    else:
+        print("ave number of conditions" , 0 )
+        print("max number of conditions" , 0 )
+        print("used features", 0 )
+    return
