@@ -22,7 +22,7 @@ def explain_tabular_no_query(dataset, blackbox, target_class = 'yes', random_see
     '''
     return explain_tabular(dataset,blackbox, target_class = 'yes', random_seed=42,active_instance_number=0, K=-1, active=False)
 
-def explain_tabular(dataset, blackbox, target_class_idx = 1, random_seed=42, active_instance_number=200, active=True,termination_max=20):
+def explain_tabular(dataset, blackbox, target_class_idx = 1, random_seed=42, active_instance_number=200, active=True,termination_max=20, record_synthetic=False):
     '''
     `active` indicates
     '''
@@ -31,7 +31,7 @@ def explain_tabular(dataset, blackbox, target_class_idx = 1, random_seed=42, act
     np.random.seed(random_seed)
 
 
-    tree = Tree(dataset,dataset.domain,target_class_idx,blackbox=blackbox,active_instance_number=active_instance_number,max_iteration=termination_max)
+    tree = Tree(dataset,dataset.domain,target_class_idx,blackbox=blackbox,active_instance_number=active_instance_number,max_iteration=termination_max,record_synthetic=record_synthetic)
     tree.fit(dataset.X,dataset.Y)
     # from .dtextract_cart.cart import CART
     # tree = CART(max_depth=100)

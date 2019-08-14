@@ -1,9 +1,12 @@
 import numpy as np
 
-def label_with_blackbox(data_table,blackbox):
+def label_with_blackbox(data_table,black_box):
     from Orange.data import Table
-    return Table.from_numpy(X=data_table.X,Y=blackbox(data_table.X),domain=data_table.domain)
-
+    print("--")
+    print( black_box(data_table.X)[:5] )
+    print("--")
+    tmp = Table.from_numpy(data_table.domain,X=data_table.X,Y=black_box(data_table.X))
+    return tmp
 def compute_metrics(rules,domain):
     '''compute various metrics for rules'''
 

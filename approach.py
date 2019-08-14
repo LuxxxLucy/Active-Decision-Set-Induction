@@ -11,13 +11,12 @@ import Orange
 from model import ADS_Learner
 from core import best_and_second_best_action
 
-# from tqdm import tqdm_notebook as tqdm
-from tqdm import tqdm
+
 import logging
 import time
 import os
 
-def explain_tabular(dataset,blackbox, target_class_idx=1, pre_label=True, random_seed=42,beta=1,lambda_parameter=0.01,use_pre_mined = False, objective = 'simple'):
+def explain_tabular(dataset,blackbox, target_class_idx=1, pre_label=True,verbose=True, random_seed=42,beta=1,lambda_parameter=0.01,use_pre_mined = False, objective = 'simple'):
     '''
     Input Params:
     1. dataset: a Orange data table
@@ -69,8 +68,18 @@ def explain_tabular(dataset,blackbox, target_class_idx=1, pre_label=True, random
     explainer.initialize_synthetic_dataset() # initialize synthetic dataset as empty
     # the local search: main algorithm
     logging.info('Begin the outer loop')
-    for iter_number in tqdm(range(explainer.N_iter_max)):
+    if verbose:
+        from tqdm import tqdm_notebook as tqdm
+        # from tqdm import tqdm
+        pbar = tqdm(total=explainer.N_iter_max)
+
+    # print("not resetting XY")
+    for iter_number in range(explainer.N_iter_max):
     # for iter_number in range(explainer.N_iter_max):
+        # explainer.reset_XY()
+        if verbose:
+            pbar.set_description("n_rules "+str(len(explainer.current_solution)))
+            pbar.update(1)
         try:
             actions = explainer.generate_action_space() # generating possible actions
         except Exception as e:
@@ -115,11 +124,13 @@ def explain_tabular(dataset,blackbox, target_class_idx=1, pre_label=True, random
         explainer.update_current_solution(a_star,actions) #take the greedy or take random
         explainer.update() # count += 1
         del actions
-        # print("finding best solution",time.time()-start_time)
-        # print ('\tTook %0.3fs to generate for mode %s ' %( (time.time() - start_time ),a_star.mode)  )
-        # print ('\tTook %0.3fs for finding best actions for mode %s ' %( (time.time() - start_time ),a_star.mode)  )
-        # quit()
 
+    if verbose:
+        # pbar.set_description("n_rules "+str(len(explainer.current_solution)))
+        pbar.clear()
+        pbar.close()
+
+    # explainer.reset_XY()
     rule_set = explainer.output()
     # print("the result accuracy",explainer.compute_accuracy(rule_set))
     # print("the number of rules",len(rule_set))

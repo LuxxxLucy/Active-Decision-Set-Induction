@@ -11,6 +11,8 @@ from Orange.classification.rules import LaplaceAccuracyEvaluator,WeightedRelativ
 
 # import local package
 from .anchor import anchor_tabular
+from .utils import Condition
+from .utils import Rule as Our_Rule
 # from .anchor.anchor_explanation import AnchorExplanation
 
 # two functions are of interest:
@@ -22,38 +24,16 @@ from .anchor import anchor_tabular
 # 2. encoder: a scikit transformer
 # 3. blackbox: a blackbox predict function, such as `c.predict` where c is a scikit-classifier
 # 4. target_class
-class Selector(namedtuple('Selector', 'column, op, value')):
 
-    OPERATORS = {
-        # discrete, nominal variables
-        '==': operator.eq,
-        '=': operator.eq,
-        '!=': operator.ne,
-        # continuous variables
-        '<=': operator.le,
-        '>=': operator.ge,
-        '<': operator.lt,
-        '>': operator.gt,
-    }
-    def filter_instance(self, x):
-        """
-        Filter a single instance. Returns true or false
-        """
-        return Selector.OPERATORS[self[1]](x[self[0]], self[2])
-
-    def filter_data(self, X):
-        """
-        Filter several instances concurrently. Retunrs array of bools
-        """
-        return Selector.OPERATORS[self[1]](X[:, self[0]], self[2])
-
-def cn2anchor_tabular(dataset, blackbox, target_class = 'yes', random_seed=42):
+def cn2anchor_tabular(dataset, blackbox, target_class_idx = 1, random_seed=42,number = 100):
     '''
     this is a warpper of the cn2 algorithm where the rule finder is replaced by Anchor algorithm
     The only changes are:
     Note only rules for one class (by default class 1) is generated, while the original algorithm will consider every class.
     '''
     np.random.seed(random_seed)
+    target_class = dataset.domain.class_var.values[target_class_idx]
+
 
     # re-labelled the data
     labels = blackbox(dataset.X)
@@ -82,9 +62,25 @@ def cn2anchor_tabular(dataset, blackbox, target_class = 'yes', random_seed=42):
             self.anchor_explainer.fit(X,Y,X,Y)
 
             # randomly pick a instance of that target_class
-            idx = random.choice( np.where(Y==target_class)[0] )
+            threshold = 0.99
+            rule_candidates = []
+            for _ in range(1000):
+                idx = random.choice( np.where(Y==target_class)[0] )
+                rule,precision = self.find_anchor(X,Y,W,target_class,domain,idx,threshold)
+                if precision <= threshold:
+                    rule_candidates.append( (rule,precision))
+                    continue
+                else:
+                    # print("find one!")
+                    return rule
 
-            anchor_exp = self.anchor_explainer.explain_instance(X[idx], blackbox, threshold=0.99)
+            print("find best one")
+            return max(rule_candidates,key= lambda x: x[1] )[0]
+            # return rule_candidates[0]
+
+        def find_anchor(self,X,Y,W,target_class,domain,idx,threshold=0.95):
+
+            anchor_exp = self.anchor_explainer.explain_instance(X[idx], blackbox, threshold=threshold)
             # note that anchor exp is a different data structure
             # a converting is needed
             string_exp = anchor_exp.exp_map['names']
@@ -99,32 +95,42 @@ def cn2anchor_tabular(dataset, blackbox, target_class = 'yes', random_seed=42):
                     col_idx = col_names.index(condition[0])
                     if domain.attributes[col_idx].is_continuous:
                         value = float(condition[2])
-                    s = Selector(column=col_idx,op=condition[1],value=value)
+                        if condition[1] in ['<','<=']:
+                            s = Condition(column=col_idx,type="continuous",max_value=value,min_value=domain.attributes[col_idx].min)
+                        elif condition[1] in ['>','>=']:
+                            s = Condition(column=col_idx,type="continuous",min_value=value,max_value=domain.attributes[col_idx].max)
+                        else:
+                            print("converting error")
+                    else:
+                        assert condition[1] in ["=","=="],"converting error, in categorical"
+                        value = domain.attributes[col_idx].values.index(condition[2])
+                        s = Condition(column=col_idx,type="categorical",values=[value])
                     selectors.append(s)
                 elif len(condition) == 5:
                     col_idx = col_names.index(condition[2])
                     if domain.attributes[col_idx].is_continuous:
                         condition[4] = float(condition[4])
                         condition[0] = float(condition[0])
-                    s = Selector(column=col_idx,op=condition[3],value=condition[4])
-                    selectors.append(s)
-                    reverser_op = lambda x: {'<':'>','<=':'>=','=':'=','==':'==','>':'<','>=':'<='}[x]
-                    s = Selector(column=col_idx,op= reverser_op(condition[1]),value=condition[0])
-                    selectors.append(s)
+                    # s = Condition(column=col_idx,op=condition[3],value=condition[4])
+                    # selectors.append(s)
+                    # reverser_op = lambda x: {'<':'>','<=':'>=','=':'=','==':'==','>':'<','>=':'<='}[x]
+                    # s = Condition(column=col_idx,op= reverser_op(condition[1]),value=condition[0])
+                    # selectors.append(s)
+                    s = Condition(column=col_idx,type="continuous",min_value=condition[0],max_value=condition[4])
 
-            rule = Rule(selectors=selectors,domain=domain)
-            rule.prediction = target_class
+            rule = Our_Rule(conditions=selectors,target_class_idx=target_class)
+            rule.target_class = domain.class_var.values[target_class]
 
             # compute the covered data
             # note covered instance of target class is removed
             rule.covered_examples = np.ones(X.shape[0], dtype=bool)
-            for selector in rule.selectors:
+            for selector in rule.conditions:
                 rule.covered_examples &= selector.filter_data(X)
-            print(string_exp)
-            print(np.sum(rule.covered_examples))
+            # print(string_exp)
+            # print(np.sum(rule.covered_examples))
             rule.covered_examples &= Y==1
-            print(np.sum(rule.covered_examples))
-            return rule
+            # print(np.sum(rule.covered_examples))
+            return rule,anchor_exp.precision()
 
     #intializes the explainer
     class cn2anchor_explainer(_RuleLearner):
@@ -134,14 +140,20 @@ def cn2anchor_tabular(dataset, blackbox, target_class = 'yes', random_seed=42):
             self.rule_finder = AnchorRuleFinder(data_table,blackbox)
             self.rule_finder.quality_evaluator = LaplaceAccuracyEvaluator()
 
-        def find_rules(self, X, Y, W, target_class, domain):
+        def find_rules(self, X, Y, W, target_class, domain,number=10):
             rule_list = []
-            while not self.data_stopping(X, Y, W, target_class):
+
+            max_iteration = number
+            verbose = True
+            if verbose:
+                from tqdm import tqdm_notebook as tqdm
+                pbar = tqdm(total=max_iteration)
+            while not self.data_stopping(X, Y, W, target_class,domain=domain):
                 # generate a new rule that has not been seen before
                 new_rule = self.rule_finder(X, Y, W, target_class, domain )
 
                 # the general requirements can be found
-                if len(rule_list) >= 20:
+                if len(rule_list) >= max_iteration:
                     print("max number rule generated. exiting now")
                     break
                 # if new_rule == None:
@@ -150,10 +162,13 @@ def cn2anchor_tabular(dataset, blackbox, target_class = 'yes', random_seed=42):
                 # exclusive removed the covered instance of target class
                 X, Y, W = self.cover_and_remove(X, Y, W, new_rule)
                 rule_list.append(new_rule)
+                if verbose:
+                    pbar.update(1)
+            pbar.close()
 
             return rule_list
 
-        def fit(self, X, Y, domain,target_class,W=None):
+        def fit(self, X, Y, domain,target_class,W=None,number = 10):
             self.domain = domain
             Y = Y.astype(dtype=int)
             rule_list = []
@@ -161,16 +176,20 @@ def cn2anchor_tabular(dataset, blackbox, target_class = 'yes', random_seed=42):
             target_class_idx = domain.class_var.values.index(target_class)
 
             # rule_list.extend(self.find_rules(X, Y, W, target_class_idx,self.domain))
-            rule_list = self.find_rules(X, Y, W, target_class_idx,self.domain)
+            rule_list = self.find_rules(X, Y, W, target_class_idx,self.domain,number=number)
             # add the default rule
             # rule_list.append(self.generate_default_rule(X, Y, W, self.domain))
             return rule_list
 
 
+    for feature in data_table.domain.attributes:
+        if feature.is_continuous:
+            feature.max = max([ d[feature] for d in data_table ]).value
+            feature.min = min([ d[feature] for d in data_table ]).value
 
     # fit the explainer to the data
     explainer = cn2anchor_explainer(data_table,blackbox)
-    rule_list = explainer.fit(data_table.X,data_table.Y,data_table.domain,target_class=target_class)
+    rule_list = explainer.fit(data_table.X,data_table.Y,data_table.domain,target_class=target_class,number=number)
 
     return rule_list
 

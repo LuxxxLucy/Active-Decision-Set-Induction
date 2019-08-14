@@ -57,6 +57,7 @@ def simple_objective(solution,X,Y,lambda_parameter=0.01,target_class_idx=1):
     theta = np.count_nonzero(hit_or_not) / hit_or_not.shape[0]
 
     return theta - lambda_parameter * len(solution)
+
 def bayesian_objective(solution,X,Y,target_class_idx=1,alpha_list=None,num_attributes=None):
     def log_betabin(k,n,alpha,beta):
         try:
@@ -118,7 +119,6 @@ def bayesian_objective(solution,X,Y,target_class_idx=1,alpha_list=None,num_attri
     likelihood_1 =  log_betabin(TP,TP+FP,alpha_1,beta_1)
     likelihood_2 = log_betabin(TN,FN+TN,alpha_2,beta_2)
     return sum( [prior_NumOfRules,prior_NumOfItems,prior_ChsItems,likelihood_1,likelihood_2] )
-
 
 
 def sampling_criteria(distance_to_nearest_neighnour):
@@ -214,6 +214,7 @@ def sample_new_instances(a_star,a_prime,X,Y,domain,blackbox,batch_size=1,populat
             nearest_distances = np.amin(tmp, axis=1).tolist()
 
             idx_to_add = max([ (i,d) for i,d in enumerate(nearest_distances)], key = lambda x: sampling_criteria(x[1]) )[0]
+            # idx_to_add = max([ (i,d) for i,d in enumerate(nearest_distances)], key = lambda x: random.random() )[0]
             # TODO: change this
 
             synthetic_rows.append(population[idx_to_add])

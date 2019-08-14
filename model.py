@@ -67,11 +67,19 @@ class ADS_Learner(Decision_Set_Learner):
         X_prime,Y_prime = self.synthetic_data_table.X,self.synthetic_data_table.Y
         self.total_X = np.append(X, X_prime, axis=0)
         self.total_Y = np.append(Y, Y_prime, axis=0)
+        # self.total_X = X[:]
+        # self.total_Y = Y[:]
+        return
+
+    def reset_XY(self):
+        X,Y = self.data_table.X,self.data_table.Y
+        self.total_X = X[:]
+        self.total_Y = Y[:]
         return
 
     def set_parameters(self,beta,lambda_parameter):
         self.N_iter_max = 1000
-        # self.N_iter_max = 2
+        # self.N_iter_max = 4000
         self.lambda_parameter = lambda_parameter
         self.beta = beta
 

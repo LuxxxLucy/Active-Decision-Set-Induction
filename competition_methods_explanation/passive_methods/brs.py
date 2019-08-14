@@ -29,7 +29,7 @@ def explain_tabular(dataset, blackbox, target_class_idx=1, pre_label=True, rando
 
     # convert the rule representation
     rule_set = explainer.rules_convert(rule_set,dataset.domain)
-    return rule_set
+    return rule_set,explainer
 
 def compute_metrics_brs(rules):
     print("number of rules",len(rules))

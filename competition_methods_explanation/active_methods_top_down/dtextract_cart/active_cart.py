@@ -11,7 +11,7 @@ from .core import sampling_new_instance_uniform,sampling_new_instance_from_distr
 class Active_CART(CART):
 
     def __init__(self,data_table=None,domain=None,Y_class_idx=None,blackbox=None,root=None,current_depth=0,
-        active_instance_number=0,use_real_instance_when_active = False,max_iteration=1000):
+        active_instance_number=0,use_real_instance_when_active = False,max_iteration=1000,record_synthetic = False):
         super().__init__(tree = 'cls',criterion = 'gini',max_depth = 100)
         if root == None:
             '''which means it is the root node'''
@@ -34,6 +34,8 @@ class Active_CART(CART):
             self.max_iteration = max_iteration
             # self.max_iteration = 1000
             self.root.min_samples_leaf = 2
+
+            self.record_synthetic = record_synthetic
 
         else:
             self.root = root
@@ -61,6 +63,9 @@ class Active_CART(CART):
             self.sampler = GaussianMixture()
             self.sampler.fit(X,Y)
             print("finish estimate the distribution")
+            if self.record_synthetic == True:
+                self.synthetic_X = np.zeros((0, X.shape[1] ))
+                self.synthetic_Y = np.zeros((0))
         else:
             self.sampler = None
 
@@ -127,6 +132,9 @@ class Active_CART(CART):
             else:
                 X = new_generated_X
                 Y = new_generated_Y
+                if self.root.record_synthetic == True:
+                    self.root.synthetic_X = np.concatenate((self.root.synthetic_X, X))
+                    self.root.synthetic_Y = np.concatenate((self.root.synthetic_Y, Y))
 
         self.X = X
         self.Y = Y

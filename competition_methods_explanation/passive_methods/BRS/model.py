@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from fim import fpgrowth
 from sklearn.ensemble import RandomForestClassifier
-from scipy.sparse import csc_matrix
+from scipy.sparse import csc_matrix,csr_matrix
 
 # import standard programming-purpose package
 import time
@@ -41,15 +41,21 @@ class BRS(object):
         self.N = len(self.Y)
 
     def fit(self,domain,X,Y=None,Niteration=100):
+        """
+        note that if the BRS keeps producing small size rule set,
+        set the the max_len (maxmum length of a rule) to be larger
+        """
         N = 2000      # number of rules to be used in SA_patternbased and also the output of generate_rules
         Niteration = 500  # number of iterations in each chain
         Nchain = 2         # number of chains in the simulated annealing search algorithm
 
-        supp = 0.05           # 5% is a generally good number. The higher this supp, the 'larger' a pattern is
-        # supp = 0.01
-        supp = 0.004
-        # maxlen = 3         # maxmum length of a pattern
-        maxlen = 10        # maxmum length of a pattern
+        # supp = 0.05           # 5% is a generally good number. The higher this supp, the 'larger' a pattern is
+        supp = 0.01
+        # supp = 0.008
+        # maxlen = 5       # maxmum length of a pattern
+
+        #
+        maxlen = min(7,X.shape[1])
 
         # \rho = alpha/(alpha+beta). Make sure \rho is close to one when choosing alpha and beta.
         # alpha_1 = 500       # alpha_+
@@ -63,12 +69,19 @@ class BRS(object):
         alpha_2 = 900
         beta_2 = 100
 
-        supp_num = int(X.shape[0]*supp)
-        # supp_num = 60
+        min_support = 10
+        p_data = np.where(self.Y==self.target_class_idx)[0]
+        print(p_data.shape)
+        supp_num = max( int(p_data.shape[0]*supp), min_support)
+        # supp_num = 100
+
+
+        print("start BRS algorithm")
 
         self.generate_rules(supp_num,maxlen,N,method='fpgrowth')
         self.set_parameters(alpha_1,beta_1,alpha_2,beta_2,None,None)
         rules = self.SA_patternbased(Niteration,Nchain,print_message=False)
+        self.rules = rules
         return rules
 
     def getPatternSpace(self):
@@ -99,15 +112,22 @@ class BRS(object):
         df.columns = [name.strip() + '_neg' for name in self.df.columns]
         df = pd.concat([self.df,df],axis = 1)
         # if method =='fpgrowth' and maxlen<=3:
-        if method =='fpgrowth':
+        if method =='fpgrowth' and self.maxlen <= 3:
+        # if method =='fpgrowth':
             print ('Generating rules using fpgrowth, of support',self.supp,"max len", self.maxlen)
-            itemMatrix = [[item for item in df.columns if row[item] ==1] for i,row in df.iterrows() ]
+            # itemMatrix = [[item for item in df.columns if row[item] ==1] for i,row in df.iterrows() ]
+            cols = df.columns.values.astype(str)
+            R,C = np.where(df.values==1)
+            itemMatrix = np.split(cols[C],np.unique(R,return_index=True)[1])[1:]
+            itemMatrix = [ item.tolist() for item in itemMatrix]
+
+
             pindex = np.where(self.Y==self.target_class_idx)[0]
             nindex = np.where(self.Y!=self.target_class_idx)[0]
             # pindex = np.where(self.Y==1)[0]
             # nindex = np.where(self.Y!=1)[0]
             start_time = time.time()
-            rules= fpgrowth([itemMatrix[i] for i in pindex],supp = supp,zmin = 1,zmax = maxlen)
+            rules= fpgrowth([itemMatrix[i] for i in pindex],supp = supp,zmin = 1,zmax = self.maxlen)
             rules = [tuple(np.sort(rule[0])) for rule in rules]
             rules = list(set(rules))
             print ('\tTook %0.3fs to generate %d rules' % (time.time() - start_time, len(rules)))
@@ -116,11 +136,11 @@ class BRS(object):
             print ('Generating rules using tree-based method ')
             start_time = time.time()
             for length in range(1,maxlen+1,1):
-                n_estimators = min(pow(df.shape[1],length),10)
+                n_estimators = min(pow(df.shape[1],length),300)
                 clf = RandomForestClassifier(n_estimators = n_estimators,max_depth = length)
                 clf.fit(self.df,self.Y)
                 for n in range(n_estimators):
-                    rules.extend(extract_rules(clf.estimators_[n],df.columns))
+                    rules.extend(extract_rules(clf.estimators_[n],df.columns,target_class_idx=self.target_class_idx))
             rules = [list(x) for x in set(tuple(x) for x in rules)]
             print ('\tTook %0.3fs to generate %d rules' % (time.time() - start_time, len(rules)) )
         self.screen_rules(rules,df,N) # select the top N rules using secondary criteria, information gain
@@ -143,7 +163,7 @@ class BRS(object):
         df_array = df.to_numpy()
         print("2")
         # matrix = np.matrix(df_array)
-        matrix = csc_matrix(df_array)
+        matrix = csr_matrix(df_array)
         print("2.5")
         print(matrix.shape)
         print(ruleMatrix.shape)
@@ -157,8 +177,9 @@ class BRS(object):
         Zpos = [Z[i] for i in np.where(self.Y>0)][0]
         TP = np.array(np.sum(Zpos,axis=0).tolist()[0])
         # supp_select = np.where(TP>=self.supp*sum(self.Y)/100)[0]
-        supp_select = np.where(TP>=self.supp*sum(self.Y)/100000)[0]
+        # supp_select = np.where(TP>=0)[0]
         FP = np.array(np.sum(Z,axis = 0))[0] - TP
+        supp_select = np.where(TP>=FP)[0]
         TN = len(self.Y) - np.sum(self.Y) - FP
         FN = np.sum(self.Y) - TP
         p1 = TP.astype(float)/(TP+FP)
@@ -327,9 +348,18 @@ class BRS(object):
         Yhat = (np.sum(self.RMatrix[:,rules],axis = 1)>0).astype(int)
         TP,FP,TN,FN = getConfusion(Yhat,self.Y)
         Kn_count = list(np.bincount([self.rules_len[x] for x in rules], minlength = self.maxlen+1))
-        prior_ChsRules= sum([log_betabin(Kn_count[i],self.patternSpace[i],self.alpha_l[i],self.beta_l[i]) for i in range(1,len(Kn_count),1)])
-        likelihood_1 =  log_betabin(TP,TP+FP,self.alpha_1,self.beta_1)
-        likelihood_2 = log_betabin(TN,FN+TN,self.alpha_2,self.beta_2)
+        try:
+            prior_ChsRules= sum([log_betabin(Kn_count[i],self.patternSpace[i],self.alpha_l[i],self.beta_l[i]) for i in range(1,len(Kn_count),1)])
+        except:
+            print("1")
+        try:
+            likelihood_1 =  log_betabin(TP,TP+FP,self.alpha_1,self.beta_1)
+        except:
+            print("2")
+        try:
+            likelihood_2 = log_betabin(TN,FN+TN,self.alpha_2,self.beta_2)
+        except:
+            print("3")
         return [TP,FP,TN,FN],[prior_ChsRules,likelihood_1,likelihood_2]
 
     def normalize_add(self, rules_new, rule_index):
@@ -518,56 +548,73 @@ class BRS(object):
         possible_range = [ (it.min,it.max) if it.is_continuous else (0,0) for it in self.data_table.domain.attributes   ]
         print("number of rules",len(rules))
         for rule_str_tuple in rules:
-            try:
-                previous_cols =[]
-                conditions=[]
-                for condition in rule_str_tuple:
-                    name,string_conditions = condition.split('_')[:2]
-                    col_idx = col_names.index(name)
-                    if col_idx not in previous_cols:
-                        if domain.attributes[col_idx].is_continuous:
-                            c = re.split( "- | ",string_conditions)
-                            if len(c) == 2:
-                                if c[0] in ['<=','≤','<']:
-                                    s = Condition(column=col_idx,max_value=float(c[1]),type='continuous',possible_range=possible_range[col_idx])
-
-                                else:
-                                    s = Condition(column=col_idx,min_value=float(c[1]),type='continuous',possible_range=possible_range[col_idx])
-                                conditions.append(s)
-                            if len(c) == 3:
-                                s = Condition(column=col_idx,min_value=float(c[0]),max_value=float(c[2]),type='continuous')
-                                conditions.append(s)
-                        else:
-                            # categorical
-                            string_conditions_idx = self.data_table.domain.attributes[col_idx].values.index(string_conditions)
-                            s = Condition(column=col_idx,values=[string_conditions_idx],type='categorical')
+            # try:
+            previous_cols =[]
+            conditions=[]
+            for condition in rule_str_tuple:
+                name,string_conditions = condition.split('_')[:2]
+                negative_flag = ( len(condition.split('_')) == 3 )
+                col_idx = col_names.index(name)
+                if col_idx not in previous_cols:
+                    if domain.attributes[col_idx].is_continuous:
+                        print("error, BRS do not handle continuous feature. Something went wrong. Please discretize first")
+                        c = re.split( "- | ",string_conditions)
+                        if len(c) == 2:
+                            if c[0] in ['<=','≤','<']:
+                                s = Condition(column=col_idx,max_value=float(c[1]),type='continuous',possible_range=possible_range[col_idx])
+                            else:
+                                s = Condition(column=col_idx,min_value=float(c[1]),type='continuous',possible_range=possible_range[col_idx])
+                            conditions.append(s)
+                        if len(c) == 3:
+                            s = Condition(column=col_idx,min_value=float(c[0]),max_value=float(c[2]),type='continuous')
                             conditions.append(s)
                     else:
-                        s = conditions[ previous_cols.index(col_idx) ]
-                        if domain.attributes[col_idx].is_continuous:
-                            c = re.split( "- | ",string_conditions)
-                            if len(c) == 2:
-                                if c[0] in ['<=','≤','<']:
-                                    s_tmp = Condition(column=col_idx,max_value=float(c[1]),type='continuous',possible_range=possible_range[col_idx])
-                                else:
-                                    s_tmp = Condition(column=col_idx,min_value=float(c[1]),type='continuous',possible_range=possible_range[col_idx])
-                                s.max = max(s.max,s_tmp.max)
-                                s.min = min(s.min,s_tmp.min)
-                            if len(c) == 3:
-                                s.max = max(s.max,float(c[2]))
-                                s.min = min(s.min,float(c[0]))
+                        # categorical
+                        all_values = self.data_table.domain.attributes[col_idx].values
+                        string_conditions_idx = all_values.index(string_conditions)
+                        if negative_flag:
+                            this_values = [ i for i in range( len(all_values) ) if i!=string_conditions_idx ]
                         else:
-                            # categorical
-                            string_conditions_idx = self.data_table.domain.attributes[col_idx].values.index(string_conditions)
-                            s.values.append(string_conditions_idx)
+                            this_values = [string_conditions_idx]
+                        s = Condition(column=col_idx,values=this_values,type='categorical')
+                        conditions.append(s)
                     previous_cols.append(col_idx)
+                else:
+                    s = conditions[ previous_cols.index(col_idx) ]
+                    if domain.attributes[col_idx].is_continuous:
+                        print("error, BRS do not handle continuous feature. Something went wrong. Please discretize first")
+                        c = re.split( "- | ",string_conditions)
+                        if len(c) == 2:
+                            if c[0] in ['<=','≤','<']:
+                                s_tmp = Condition(column=col_idx,max_value=float(c[1]),type='continuous',possible_range=possible_range[col_idx])
+                            else:
+                                s_tmp = Condition(column=col_idx,min_value=float(c[1]),type='continuous',possible_range=possible_range[col_idx])
+                            s.max = max(s.max,s_tmp.max)
+                            s.min = min(s.min,s_tmp.min)
+                        if len(c) == 3:
+                            s.max = max(s.max,float(c[2]))
+                            s.min = min(s.min,float(c[0]))
+                    else:
+                        # categorical
+                        all_values = self.data_table.domain.attributes[col_idx].values
+                        string_conditions_idx = all_values.index(string_conditions)
+                        if negative_flag:
+                            new_values = set( [ i for i in range( len(all_values) ) if i!=string_conditions_idx ] )
+                            old_values = set(s.values[:])
+                            s.values = sorted( old_values & new_values  )
+                        else:
+                            new_values = set ( [string_conditions_idx] )
+                            # s.values.append(string_conditions_idx)
+                            # old_values = set(s.values[:])
+                            # s.values = sorted( old_values | new_values  )
+                            s.values = sorted( new_values)
 
-                # merge, for example, merge "1<x<2" and "2<x<3" into "1<x<3"
-                rule = Rule(conditions=conditions,domain=domain,target_class_idx=self.target_class_idx)
-                rule_set.append(rule)
-            except:
-                print("one error in converting")
-                continue
+            # merge, for example, merge "1<x<2" and "2<x<3" into "1<x<3"
+            rule = Rule(conditions=conditions,domain=domain,target_class_idx=self.target_class_idx)
+            rule_set.append(rule)
+            # except:
+            #     print("one error in converting")
+            #     continue
 
         return rule_set
 
@@ -626,6 +673,7 @@ def getConfusion(Yhat,Y):
     FN = len(Yhat) - np.sum(Yhat) - TN
     return TP,FP,TN,FN
 
+
 def predict(rules,df):
     Z = [[] for rule in rules]
     dfn = 1-df #df has negative associations
@@ -636,11 +684,12 @@ def predict(rules,df):
     Yhat = (np.sum(Z,axis=0)>0).astype(int)
     return Yhat
 
-def extract_rules(tree, feature_names):
+def extract_rules(tree, feature_names,target_class_idx=1):
     left      = tree.tree_.children_left
     right     = tree.tree_.children_right
     threshold = tree.tree_.threshold
     features  = [feature_names[i] for i in tree.tree_.feature]
+    labels = tree.tree_.value
     # get ids of child nodes
     idx = np.argwhere(left == -1)[:,0]
 
@@ -664,6 +713,9 @@ def extract_rules(tree, feature_names):
             return recurse(left, right, parent, lineage)
     rules = []
     for child in idx:
+        this_label = np.argmax( labels[child] )
+        if this_label != target_class_idx:
+            continue
         rule = []
         for node in recurse(left, right, child):
             rule.append(node)
