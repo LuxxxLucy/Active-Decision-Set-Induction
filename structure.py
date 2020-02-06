@@ -535,6 +535,7 @@ class Decision_Set_Learner():
         # this.cache_condition_bit = None
         # this.cache_rule_bit = None
         return
+
     def finish(self):
         this.cache_condition_bit = None
         this.cache_rule_bit = None

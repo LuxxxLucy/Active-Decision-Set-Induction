@@ -79,7 +79,7 @@ class ADS_Learner(Decision_Set_Learner):
 
     def set_parameters(self,beta,lambda_parameter):
         self.N_iter_max = 1000
-        # self.N_iter_max = 4000
+        # self.N_iter_max = 40
         self.lambda_parameter = lambda_parameter
         self.beta = beta
 
@@ -204,6 +204,13 @@ class ADS_Learner(Decision_Set_Learner):
                 print("not supported")
 
         return best_solution
+
+    def output_by_len(self,max_len=50):
+        solution_history_by_len = [  list(filter(lambda x: len(x) == length, self.solution_history) ) for length in range(max_len) ]
+        solution_history_by_len = [ it for it in solution_history_by_len if len(it) >0 ]
+
+        all_explanations = [ max( enumerate(history),key=lambda x: self.objective(x[1],self.total_X,self.total_Y,target_class_idx=self.target_class_idx) )[1] for history in solution_history_by_len ]
+        return all_explanations
 
     def output(self):
         result =  self.output_the_best(lambda_parameter=self.lambda_parameter)
