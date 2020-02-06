@@ -1,6 +1,9 @@
 # ACTIVE Decision Set Induction from Machine Learning Model
+This contains the code of "An Active Approach for Model Interpretation". NeurIPS 2019 Workshop on Human centric machine learning. https://arxiv.org/abs/1910.12207
 
-This is a repo for current research project on __decision set__ induction from machine learning model.
+Note that, the code are used for reproduce the experiments and is not organized very well.
+
+Basically, this is a repo for __decision set__ induction from machine learning model.
 This is a model-agnostic approach that could be used to infer human-readable patterns from any blackbox model (classifier).
 
 By human-readable patterns, I mean If-THEN rules.
@@ -35,8 +38,7 @@ Most of these baselines are adopted from the original code. A lot of efforts are
 
 Passive approaches:
 
-1. __Interpretable decision set__ (TODO)
-2. __MUSE__ (TODO)
+1. __Interpretable decision set__ (this method is rubbish, cannot be reproduced)
 3. __Bayesian decision set__ in `BRS.py`: adopted from the original code. fixes some bugs and compatibility issues.
 4. __Scalable Bayesian Decision List__. install `pysbrl`
 5. __RuleMatrix__ (sampling+SBDL)
@@ -47,9 +49,9 @@ Active approaches (bottom-up)
 1. __CN2-Anchor__ in `cn2anchor.py`: a simple improve using separate-and-conquer scheme: pick a random instance, generate an anchor, remove the covered instances, and repeat till all instances are covered. We called it CN2-Anchor algorithm. It differs from the above Submodular pick on how to select the explanation: it does pick the best but only randomly. It takes much less time since generating a local explanation is not cheap and it does not have to compute every anchor. But the performance typically is not that different.
 
 Active approaches (top-down):
-1. __TREPAN__:
-2. __DTExtract__:
-3. __UCT-DTExtract__ in `uct.py`:
+1. __TREPAN__: Craven 1996. An rather old approach
+2. __DTExtract__: See Bastani et al. <Interpreting Blackbox Models via Model Extraction>
+3. __UCT-DTExtract__ in `uct.py`: my improvised version, improving DT-extract
 
 ## Hyper-Parameters
 
@@ -71,4 +73,4 @@ There are hyper-parameters for this algorithm:
 
 ## More on implementation limitation
 
-* the implementation of k-nearest neighbor...
+* the implementation of k-nearest neighbor, as you might know, is hard and slow.
